@@ -1,0 +1,5 @@
+# Normalise to LF — this repo is developed on Windows but runs on a Linux Pi.
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.duckdb binary

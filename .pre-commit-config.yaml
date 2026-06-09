@@ -1,0 +1,46 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.9.0
+    hooks:
+      - id: ruff-format
+      - id: ruff
+        args: [--fix]
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-added-large-files
+      - id: check-merge-conflict
+
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.14.0
+    hooks:
+      - id: mypy
+        additional_dependencies: [pydantic, types-pyyaml]
+        files: ^middler/
+
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.8.0
+    hooks:
+      - id: bandit
+        args: [-q, -c, pyproject.toml]
+        files: ^middler/
+
+  - repo: https://github.com/codespell-project/codespell
+    rev: v2.3.0
+    hooks:
+      - id: codespell
+        args: [--skip, "*.duckdb,*.lock,*.html"]
+
+  - repo: local
+    hooks:
+      # The maths is sacred (proposal §3, §8): never let a probabilistic model,
+      # RNG, or LLM call leak into the detection/staking path.
+      - id: no-rng-in-detection
+        name: reject random/ML imports in detection & placement maths
+        entry: bash -c 'if grep -rnE "import (random|numpy\.random)|from random|sentence_transformers|anthropic|openai" middler/detection middler/place 2>/dev/null; then echo "↑ probabilistic/LLM code must not touch detection or placement"; exit 1; fi'
+        language: system
+        pass_filenames: false

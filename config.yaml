@@ -1,0 +1,76 @@
+# ─────────────────────────────────────────────────────────────────────────────
+#  middler — operating configuration (non-secret)
+#  Secrets live in .env. This file is safe to commit. All times in UTC.
+# ─────────────────────────────────────────────────────────────────────────────
+
+region: au                    # The Odds API region: AU-licensed books only
+
+# Sports to watch. Keys are The-Odds-API sport keys. Per proposal §8, team-sport
+# totals/handicaps are the durable, legally-placeable hunting ground; golf is
+# opportunistic only.
+sports:
+  - aussierules_afl
+  - rugbyleague_nrl
+  - basketball_nba
+  - americanfootball_nfl
+  - basketball_aus_nbl
+
+# Markets where middling/arbitrage live.
+markets:
+  - h2h          # head-to-head — arbitrage only
+  - totals       # over/under — the middling backbone
+  - spreads      # handicaps — the middling backbone
+
+# Sharp references for the sanity filter (§4.4). An "edge" that disagrees with
+# these is treated as one book being wrong, not a genuine opportunity.
+sharp_books:
+  - pinnacle
+  - betfair_ex_au
+
+# Bookmakers to include (empty = all AU books the feed returns). Listed for
+# documentation; deep-link templates live in middler/alert/deeplinks.py.
+bookmakers: []
+
+# ── Detection thresholds ─────────────────────────────────────────────────────
+detection:
+  # Minimum arbitrage profit margin (fraction). 0.005 = 0.5%.
+  min_arb_margin: 0.005
+  # Minimum middle width in points to bother flagging.
+  min_middle_width: 0.5
+  # Minimum estimated EV (fraction of total stake) to flag a middle.
+  min_middle_ev: 0.0
+  # Stake-sizing mode: equal | balanced | kelly
+  stake_mode: balanced
+  # Fraction of Kelly when stake_mode = kelly (0..1). Ignored otherwise.
+  kelly_fraction: 0.25
+  # Max deviation (in implied-prob points) from the sharp reference before a
+  # line is treated as stale/wrong and dropped.
+  sharp_tolerance: 0.06
+
+# ── Scheduler / adaptive cadence ─────────────────────────────────────────────
+scheduler:
+  # Events enter the ACTIVE polling set this many hours before commence_time.
+  active_window_hours: 72
+  # Discovery (free /events listing) cadence in seconds.
+  discovery_interval_sec: 3600
+  # Odds-poll cadence floor/ceiling in seconds. Cadence ramps between these as
+  # an event nears kick-off (and with recent volatility).
+  poll_min_sec: 60
+  poll_max_sec: 3600
+  # Stop polling this many seconds before commence_time (never poll in-play).
+  stop_before_commence_sec: 0
+
+# ── Stake calculator defaults (for the Telegram alert) ───────────────────────
+staking:
+  default_total_stake: 100.0      # AUD, used to render the suggested split
+  two_step_confirm_above: 200.0   # AUD, require a second confirm above this
+
+# ── Backcast / report ────────────────────────────────────────────────────────
+backcast:
+  # Per-market historical hit-rate priors for "result lands in the middle".
+  # Used only to estimate EV before enough self-recorded data exists; replaced
+  # by empirically observed rates once the history store has settled results.
+  middle_hit_rate_prior:
+    totals: 0.06
+    spreads: 0.05
+  report_path: reports/backcast.html

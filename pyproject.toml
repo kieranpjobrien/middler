@@ -1,0 +1,72 @@
+[project]
+name = "middler"
+version = "0.1.0"
+description = "Pre-match betting middling & arbitrage detector for AU bookmakers"
+requires-python = ">=3.13"
+dependencies = [
+    "duckdb>=1.4.4",
+    "polars>=1.38.1",
+    "httpx>=0.28.1",
+    "pydantic>=2.12.5",
+    "pydantic-settings>=2.7.0",
+    "pyyaml>=6.0.2",
+    "redis>=5.2.1",
+    "rapidfuzz>=3.10.0",
+    "python-telegram-bot>=21.9",
+    "plotly>=6.0.0",
+]
+
+[project.optional-dependencies]
+# Heavy/optional — installed only when needed. The embedding fallback pulls in
+# torch (large); Betfair placement is the final, money-touching phase.
+embed = ["sentence-transformers>=3.3.0"]
+betfair = ["betfairlightweight>=2.20.0"]
+dev = [
+    "pytest>=8.3.4",
+    "pytest-asyncio>=0.25.0",
+    "ruff>=0.9.0",
+    "mypy>=1.14.0",
+    "types-pyyaml>=6.0.12",
+]
+
+[project.scripts]
+middler = "middler.app:main"
+middler-healthcheck = "middler.healthcheck:main"
+middler-chatid = "middler.tools.get_chat_id:main"
+middler-report = "middler.backcast.report:main"
+
+[tool.ruff]
+line-length = 120
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM"]
+ignore = ["E501"]  # line length enforced by the formatter
+
+[tool.ruff.format]
+docstring-code-format = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+asyncio_mode = "auto"
+python_files = "test_*.py"
+
+[tool.mypy]
+python_version = "3.13"
+strict = true
+ignore_missing_imports = true
+files = ["middler"]
+
+[tool.bandit]
+# B101 assert_used — asserts are fine in our deterministic maths guards.
+# B608 hardcoded_sql — DuckDB writes use parameterised statements; the schema
+# DDL is static and contains no user input.
+skips = ["B101", "B608"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["middler"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
