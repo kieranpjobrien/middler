@@ -103,7 +103,10 @@ scheduler:
 # spreads). 5 calls/day × 3 = ~450/month, leaving a reserve. The live balance is
 # also read from the API's response header and polling stops below the reserve.
 budget:
-  the_odds_api_per_day: 5
+  # Golf outright calls cost only 1 credit each (one market), so 10/day = ~300
+  # credits/month — well within 500, with the reserve as a hard backstop. If you
+  # re-enable team sports (3 credits/call), drop this to ~5.
+  the_odds_api_per_day: 10
   the_odds_api_min_reserve: 50
   odds_api_io_per_hour: 90      # free tier allows 100/hour
   oddspapi_per_day: 8           # free tier allows ~250/month (client not yet wired)
