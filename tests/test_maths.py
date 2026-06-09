@@ -15,10 +15,12 @@ from middler.detection.maths import (
     arbitrage,
     balanced_split,
     equal_split,
+    evaluate_back_lay,
     evaluate_middle,
     fractional_kelly_stake,
     implied_prob,
     implied_sum,
+    lay_stake,
 )
 
 
@@ -274,3 +276,41 @@ def test_fractional_kelly_capped_at_fraction() -> None:
     stake = fractional_kelly_stake(1000.0, 0.25, 100.0)
     assert stake <= 0.25 * 1000.0 + 1e-9
     assert math.isclose(stake, 250.0)
+
+
+# ── back-and-lay (the exchange / lay strategy) ───────────────────────────────
+def test_lay_stake_equalises() -> None:
+    # Back $100 @ 2.10, lay @ 2.00, 5% commission.
+    # lay stake = 100 * 2.10 / (2.00 - 0.05) = 210 / 1.95 = 107.6923
+    assert lay_stake(100.0, 2.10, 2.00, 0.05) == pytest.approx(107.6923076923)
+
+
+def test_value_back_lay_locks_equal_profit() -> None:
+    # Back odds (2.10) above lay odds (2.00) → a value position.
+    #   lay stake 107.6923, liability = 107.6923 * 1.00 = 107.6923
+    #   if win:  100*(2.10-1) - 107.6923 = 110 - 107.6923 = 2.3077
+    #   if lose: 107.6923*0.95 - 100 = 102.3077 - 100 = 2.3077  (equal → locked in)
+    r = evaluate_back_lay(back_odds=2.10, lay_odds=2.00, back_stake=100.0, commission=0.05)
+    assert r.lay_stake == pytest.approx(107.6923076923)
+    assert r.lay_liability == pytest.approx(107.6923076923)
+    assert r.profit_if_win == pytest.approx(2.3076923077)
+    assert r.profit_if_lose == pytest.approx(2.3076923077)
+    assert r.guaranteed_profit == pytest.approx(2.3076923077)
+    assert r.is_value
+    assert r.roi == pytest.approx(0.0230769231)
+
+
+def test_qualifying_back_lay_is_small_loss() -> None:
+    # Equal odds with commission → the usual small "qualifying loss", not value.
+    #   lay stake = 100*2 / 1.95 = 102.5641; both outcomes = -2.5641
+    r = evaluate_back_lay(back_odds=2.00, lay_odds=2.00, back_stake=100.0, commission=0.05)
+    assert r.profit_if_win == pytest.approx(-2.5641025641)
+    assert r.profit_if_lose == pytest.approx(-2.5641025641)
+    assert not r.is_value
+
+
+def test_back_lay_rejects_bad_inputs() -> None:
+    with pytest.raises(ValueError):
+        evaluate_back_lay(back_odds=1.0, lay_odds=2.0, back_stake=100.0)
+    with pytest.raises(ValueError):
+        evaluate_back_lay(back_odds=2.0, lay_odds=2.0, back_stake=100.0, commission=1.0)

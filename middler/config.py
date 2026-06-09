@@ -60,6 +60,11 @@ class DetectionConfig(BaseModel):
     stake_mode: str = "balanced"  # "balanced" | "equal" | "kelly"
     kelly_fraction: float = 0.25
     sharp_tolerance: float = 0.06
+    # Back-and-lay (exchange) strategy: Betfair commission on net winnings, and the
+    # minimum locked-in ROI to flag a back-lay position. Used once Betfair exchange
+    # lay prices are available (see middler/detection/maths.evaluate_back_lay).
+    betfair_commission: float = 0.05
+    min_back_lay_roi: float = 0.0
 
 
 class SchedulerConfig(BaseModel):

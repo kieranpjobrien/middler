@@ -46,6 +46,10 @@ detection:
   # Max deviation (in implied-prob points) from the sharp reference before a
   # line is treated as stale/wrong and dropped.
   sharp_tolerance: 0.06
+  # Back-and-lay (exchange) strategy: Betfair commission on net winnings, and the
+  # minimum locked-in ROI to flag a back-lay. Active once Betfair lay prices feed in.
+  betfair_commission: 0.05
+  min_back_lay_roi: 0.0
 
 # ── Scheduler / adaptive cadence ─────────────────────────────────────────────
 scheduler:

@@ -28,14 +28,17 @@ from dataclasses import dataclass
 
 __all__ = [
     "ArbResult",
+    "BackLayResult",
     "MiddleResult",
     "arbitrage",
     "balanced_split",
     "equal_split",
+    "evaluate_back_lay",
     "evaluate_middle",
     "fractional_kelly_stake",
     "implied_prob",
     "implied_sum",
+    "lay_stake",
 ]
 
 
@@ -366,4 +369,116 @@ def evaluate_middle(
         worst_non_middle=worst_non_middle,
         hit_rate=hit_rate,
         ev=ev,
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Back-and-lay (the exchange / "lay" strategy)
+# ─────────────────────────────────────────────────────────────────────────────
+@dataclass(frozen=True, slots=True)
+class BackLayResult:
+    """Outcome of backing a selection at a bookmaker and laying it on an exchange.
+
+    Backing at decimal odds ``back_odds`` for ``back_stake`` and laying the *same*
+    selection on the exchange at ``lay_odds`` (with ``commission`` charged on net
+    exchange winnings) at the equalising lay stake gives the **same** net profit
+    whether the selection wins or loses — a market-neutral position. It is a
+    genuine value position when that locked profit is ``>= 0`` (it happens when the
+    bookmaker's back price is enough above the exchange lay price).
+
+    Attributes:
+        back_odds: Decimal odds taken at the bookmaker.
+        lay_odds: Decimal odds laid on the exchange.
+        commission: Exchange commission on net winnings, as a fraction in [0, 1).
+        back_stake: Stake placed at the bookmaker.
+        lay_stake: Equalising stake laid on the exchange.
+        lay_liability: Amount risked on the lay (``lay_stake * (lay_odds - 1)``).
+        profit_if_win: Net profit if the selection wins.
+        profit_if_lose: Net profit if the selection loses (equals ``profit_if_win``).
+    """
+
+    back_odds: float
+    lay_odds: float
+    commission: float
+    back_stake: float
+    lay_stake: float
+    lay_liability: float
+    profit_if_win: float
+    profit_if_lose: float
+
+    @property
+    def guaranteed_profit(self) -> float:
+        """The locked-in profit (the worse of the two outcomes)."""
+        return min(self.profit_if_win, self.profit_if_lose)
+
+    @property
+    def is_value(self) -> bool:
+        """True when the position locks in a non-negative profit."""
+        return self.guaranteed_profit >= 0.0
+
+    @property
+    def roi(self) -> float:
+        """Guaranteed profit as a fraction of the back stake."""
+        return self.guaranteed_profit / self.back_stake if self.back_stake else 0.0
+
+
+def lay_stake(back_stake: float, back_odds: float, lay_odds: float, commission: float = 0.0) -> float:
+    """Return the lay stake that equalises the win/lose outcomes.
+
+    Args:
+        back_stake: Stake placed at the bookmaker.
+        back_odds: Decimal back odds.
+        lay_odds: Decimal lay odds.
+        commission: Exchange commission on net winnings, in ``[0, 1)``.
+
+    Returns:
+        ``back_stake * back_odds / (lay_odds - commission)``.
+
+    Raises:
+        ValueError: If ``lay_odds - commission`` is not positive.
+    """
+    denom = lay_odds - commission
+    if denom <= 0:
+        raise ValueError("lay_odds - commission must be > 0")
+    return back_stake * back_odds / denom
+
+
+def evaluate_back_lay(
+    *,
+    back_odds: float,
+    lay_odds: float,
+    back_stake: float,
+    commission: float = 0.0,
+) -> BackLayResult:
+    """Evaluate a back-at-bookmaker / lay-on-exchange position.
+
+    Args:
+        back_odds: Decimal odds taken at the bookmaker (> 1).
+        lay_odds: Decimal odds laid on the exchange (> 1).
+        back_stake: Stake placed at the bookmaker.
+        commission: Exchange commission on net winnings, in ``[0, 1)``.
+
+    Returns:
+        A :class:`BackLayResult`. Check :attr:`BackLayResult.is_value`.
+
+    Raises:
+        ValueError: If odds are not > 1 or commission is outside ``[0, 1)``.
+    """
+    if back_odds <= 1.0 or lay_odds <= 1.0:
+        raise ValueError("decimal odds must be > 1")
+    if not 0.0 <= commission < 1.0:
+        raise ValueError("commission must be in [0, 1)")
+    ls = lay_stake(back_stake, back_odds, lay_odds, commission)
+    liability = ls * (lay_odds - 1.0)
+    profit_if_win = back_stake * (back_odds - 1.0) - liability
+    profit_if_lose = ls * (1.0 - commission) - back_stake
+    return BackLayResult(
+        back_odds=back_odds,
+        lay_odds=lay_odds,
+        commission=commission,
+        back_stake=back_stake,
+        lay_stake=ls,
+        lay_liability=liability,
+        profit_if_win=profit_if_win,
+        profit_if_lose=profit_if_lose,
     )
