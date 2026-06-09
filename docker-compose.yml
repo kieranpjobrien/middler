@@ -1,0 +1,32 @@
+# middler — one command to stand up: `docker compose up -d` (proposal §4.5).
+# Outbound-only: no ports are published, so no port-forwarding or static IP is
+# needed — alerts and placement all go *out*.
+services:
+  redis:
+    image: redis:7-alpine
+    restart: always
+    command: ["redis-server", "--save", "60", "1", "--appendonly", "no"]
+    volumes:
+      - redis-data:/data
+
+  middler:
+    build: .
+    restart: always
+    env_file: .env
+    depends_on:
+      - redis
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+      - ./data:/app/data # DuckDB history (the backcast's source of truth)
+      - ./logs:/app/logs
+      - ./reports:/app/reports # generated HTML reports
+    healthcheck:
+      test: ["CMD", "uv", "run", "middler-healthcheck"]
+      interval: 5m
+      timeout: 30s
+      retries: 3
+
+volumes:
+  redis-data:
