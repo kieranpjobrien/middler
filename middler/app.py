@@ -112,7 +112,7 @@ class MiddlerApp:
                 continue
             try:
                 raw = self.client.get_odds(
-                    sport, self.config.markets, commence_from=now, commence_to=window_to, event_ids=ids
+                    sport, self.config.markets_for(sport), commence_from=now, commence_to=window_to, event_ids=ids
                 )
             except httpx.HTTPError as exc:
                 log.warning("odds poll failed for %s: %s", sport, exc)

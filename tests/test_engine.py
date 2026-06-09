@@ -195,6 +195,34 @@ def test_sharp_reference_flags_stale_line() -> None:
     assert middles and middles[0].reference_verified is False
 
 
+def test_outright_back_lay_detects_golf_value() -> None:
+    # Real US-Open shape: TAB backs Fitzpatrick at 81 while Betfair lay is 34 →
+    # a risk-free back-lay. Scheffler (back 7 < lay 8) is not value and is dropped.
+    event = _event(
+        [
+            BookMarket(
+                bookmaker="tab",
+                market_key="outrights",
+                outcomes=[Outcome(name="Fitzpatrick", price=81.0), Outcome(name="Scheffler", price=7.0)],
+            ),
+            BookMarket(
+                bookmaker="betfair_ex_au",
+                market_key="outrights_lay",
+                outcomes=[Outcome(name="Fitzpatrick", price=34.0), Outcome(name="Scheffler", price=8.0)],
+            ),
+        ]
+    )
+    back_lays = [o for o in _detect(event) if o.kind == "back_lay"]
+    assert len(back_lays) == 1
+    o = back_lays[0]
+    assert o.is_risk_free
+    assert o.profit == pytest.approx(126.66, abs=0.05)  # $100 back, 5% commission
+    back = next(leg for leg in o.legs if leg.side == "back")
+    lay = next(leg for leg in o.legs if leg.side == "lay")
+    assert back.bookmaker == "tab" and back.price == 81.0
+    assert lay.bookmaker == "betfair_ex_au" and lay.price == 34.0
+
+
 def test_no_opportunity_on_vigged_market() -> None:
     # A single book with normal vig: no arb, and Over/Under at the same line is
     # not a middle.

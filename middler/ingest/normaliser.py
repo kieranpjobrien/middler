@@ -13,7 +13,9 @@ from typing import Any
 from middler.models import BookMarket, Event, EventStatus, OddsQuote, Outcome
 
 # Markets we understand. Anything else is ignored by the normaliser.
-KNOWN_MARKETS = frozenset({"h2h", "totals", "spreads"})
+# outrights = tournament-winner back prices (e.g. golf); outrights_lay = the
+# matching Betfair exchange lay prices, which together enable back-lay detection.
+KNOWN_MARKETS = frozenset({"h2h", "totals", "spreads", "outrights", "outrights_lay"})
 
 
 def parse_commence(value: str) -> datetime:

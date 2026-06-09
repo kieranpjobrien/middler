@@ -37,6 +37,7 @@ def _summary(result: BackcastResult) -> dict[str, object]:
         "total": len(result.opportunities),
         "middles": len(middles),
         "arbs": len(result.arbs),
+        "back_lay": sum(1 for o in result.opportunities if o.kind == "back_lay"),
         "risk_free": len(result.risk_free),
         "verified": sum(1 for o in result.opportunities if o.reference_verified),
         "avg_width": statistics.mean(widths) if widths else 0.0,
@@ -53,14 +54,17 @@ def _summary(result: BackcastResult) -> dict[str, object]:
 def _chart_over_time(result: BackcastResult) -> go.Figure | None:
     if not result.opportunities:
         return None
-    by_day: dict[str, dict[str, int]] = defaultdict(lambda: {"middle": 0, "arb": 0})
+    kinds = sorted({o.kind for o in result.opportunities})
+    by_day: dict[str, dict[str, int]] = defaultdict(lambda: dict.fromkeys(kinds, 0))
     for o in result.opportunities:
         day = to_sydney(o.observed_at).strftime("%Y-%m-%d")
         by_day[day][o.kind] += 1
     days = sorted(by_day)
+    colours = {"middle": "#2563eb", "arb": "#16a34a", "back_lay": "#7c3aed"}
+    names = {"middle": "Middles", "arb": "Arbs", "back_lay": "Back-lay"}
     fig = go.Figure()
-    fig.add_bar(x=days, y=[by_day[d]["middle"] for d in days], name="Middles", marker_color="#2563eb")
-    fig.add_bar(x=days, y=[by_day[d]["arb"] for d in days], name="Arbs", marker_color="#16a34a")
+    for k in kinds:
+        fig.add_bar(x=days, y=[by_day[d].get(k, 0) for d in days], name=names.get(k, k), marker_color=colours.get(k))
     fig.update_layout(
         barmode="stack",
         template="plotly_white",
@@ -174,6 +178,7 @@ def _cards(summary: dict[str, object]) -> str:
         ("Opportunities", f"{summary['total']:,}", "middles + arbs flagged"),
         ("Middles", f"{summary['middles']:,}", f"avg width {summary['avg_width']:.2f} pts"),
         ("Arbitrages", f"{summary['arbs']:,}", "guaranteed-profit price gaps"),
+        ("Back-lay", f"{summary['back_lay']:,}", "back-bookie / lay-Betfair (golf)"),
         ("Risk-free", f"{summary['risk_free']:,}", "lose nothing even on a miss"),
         ("Avg EV / middle", f"${summary['avg_ev']:.2f}", "at the default stake"),
         ("Sharp-verified", f"{summary['verified']:,}", "passed the reference filter"),
@@ -286,6 +291,7 @@ _TEMPLATE = """<!doctype html>
   .pill.middle {{ background:#dbeafe; color:#1e40af; }}
   .pill.arb {{ background:#dcfce7; color:#166534; }}
   .pill.risk-free {{ background:#fef9c3; color:#854d0e; }}
+  .pill.back_lay {{ background:#ede9fe; color:#5b21b6; }}
   .muted,.empty {{ color:var(--muted); }}
   .empty {{ padding:40px; text-align:center; background:#fff; border:1px dashed var(--line); border-radius:12px; }}
   footer {{ max-width:1180px; margin:0 auto; padding:0 20px 48px; color:var(--muted); font-size:12px; }}

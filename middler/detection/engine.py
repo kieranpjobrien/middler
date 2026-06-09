@@ -27,6 +27,7 @@ from middler.books import canonical_book
 from middler.config import DetectionConfig, StakingConfig
 from middler.detection.maths import (
     arbitrage,
+    evaluate_back_lay,
     evaluate_middle,
     fractional_kelly_stake,
     implied_prob,
@@ -79,7 +80,89 @@ def detect_opportunities(
             opps.extend(
                 _detect_over_under(event, books, market_key, detection, staking, sharp_set, hit_rate_prior, observed_at)
             )
-    opps.sort(key=lambda o: (o.is_risk_free, o.ev or 0.0, o.margin or 0.0), reverse=True)
+    if any(bm.market_key in ("outrights", "outrights_lay") for bm in event.book_markets):
+        opps.extend(_detect_outright_back_lay(event, detection, staking, observed_at))
+    opps.sort(key=lambda o: (o.is_risk_free, o.ev or 0.0, o.roi or 0.0, o.margin or 0.0), reverse=True)
+    return opps
+
+
+# ── outright back-lay (golf etc.: back at a bookie, lay on the exchange) ──────
+def _detect_outright_back_lay(
+    event: Event,
+    detection: DetectionConfig,
+    staking: StakingConfig,
+    observed_at: datetime,
+) -> list[Opportunity]:
+    """Find back-at-bookie / lay-on-Betfair value on outright (winner) markets.
+
+    The feed supplies bookie back prices (``outrights``) and the Betfair lay
+    prices (``outrights_lay``) for each runner. For every runner present in both,
+    the back-lay position is evaluated; a non-negative locked-in ROI (above
+    ``min_back_lay_roi``) is flagged. The lay leg is on Betfair, so the position
+    is inherently exchange-verified.
+    """
+    back: dict[str, _Leg] = {}
+    lay: dict[str, float] = {}
+    for bm in event.book_markets:
+        is_exchange = canonical_book(bm.bookmaker) == "betfair"
+        if bm.market_key == "outrights" and not is_exchange:
+            for o in bm.outcomes:
+                if o.name not in back or o.price > back[o.name].price:
+                    back[o.name] = _Leg(bm.bookmaker, o.name, None, o.price, 0.0)
+        elif bm.market_key == "outrights_lay" and is_exchange:
+            for o in bm.outcomes:
+                lay[o.name] = o.price
+
+    opps: list[Opportunity] = []
+    stake = staking.default_total_stake
+    for player, leg in back.items():
+        lay_odds = lay.get(player)
+        if lay_odds is None or lay_odds <= 1.0 or leg.price <= 1.0:
+            continue
+        bl = evaluate_back_lay(
+            back_odds=leg.price, lay_odds=lay_odds, back_stake=stake, commission=detection.betfair_commission
+        )
+        if bl.roi < detection.min_back_lay_roi:
+            continue
+        legs = [
+            OpportunityLeg(
+                bookmaker=leg.bookmaker,
+                market_key="outrights",
+                outcome_name=player,
+                side="back",
+                point=None,
+                price=leg.price,
+                stake=round(stake, 2),
+            ),
+            OpportunityLeg(
+                bookmaker="betfair_ex_au",
+                market_key="outrights_lay",
+                outcome_name=player,
+                side="lay",
+                point=None,
+                price=lay_odds,
+                stake=round(bl.lay_stake, 2),
+            ),
+        ]
+        opps.append(
+            Opportunity(
+                kind="back_lay",
+                event_id=event.id,
+                sport_key=event.sport_key,
+                commence_time=event.commence_time,
+                market_key="outrights",
+                home_team=event.home_team,
+                away_team=event.away_team,
+                legs=legs,
+                total_stake=round(stake, 2),
+                profit=round(bl.guaranteed_profit, 2),
+                roi=bl.roi,
+                is_risk_free=bl.is_value,
+                reference_verified=True,
+                observed_at=observed_at,
+            )
+        )
+    opps.sort(key=lambda o: o.roi or 0.0, reverse=True)
     return opps
 
 

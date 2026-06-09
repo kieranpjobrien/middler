@@ -23,6 +23,8 @@ log = get_logger(__name__)
 def _title(opp: Opportunity) -> str:
     if opp.kind == "arb":
         return "🟢 ARBITRAGE"
+    if opp.kind == "back_lay":
+        return "🟣 BACK-LAY" if opp.is_risk_free else "🟣 BACK-LAY (value)"
     if opp.is_risk_free:
         return "🟡 RISK-FREE MIDDLE"
     return "🔵 MIDDLE"
@@ -43,8 +45,11 @@ def format_alert(opp: Opportunity, event: Event | None = None) -> tuple[str, lis
         ``(html_text, buttons)`` where ``buttons`` is a list of ``(label, url)``.
     """
     sport = event.sport_title if event and event.sport_title else opp.sport_key
-    match = f"{opp.home_team or '?'} v {opp.away_team or '?'}"
-    lines = [f"<b>{_title(opp)} — {sport} {opp.market_key}</b>", match, ""]
+    if opp.kind == "back_lay":
+        subject = opp.legs[0].outcome_name if opp.legs else "?"
+    else:
+        subject = f"{opp.home_team or '?'} v {opp.away_team or '?'}"
+    lines = [f"<b>{_title(opp)} — {sport} {opp.market_key}</b>", subject, ""]
 
     if opp.kind == "arb":
         lines.append(f"Back both sides (total {_money(opp.total_stake)}):")
@@ -53,6 +58,16 @@ def format_alert(opp: Opportunity, event: Event | None = None) -> tuple[str, lis
             lines.append(f"• <b>{leg.bookmaker}</b> — {leg.outcome_name}{point} @ {leg.price:g} → {_money(leg.stake)}")
         lines.append("")
         lines.append(f"Guaranteed profit <b>{_money(opp.profit)}</b> ({(opp.roi or 0) * 100:.2f}%)")
+    elif opp.kind == "back_lay":
+        back = next((leg for leg in opp.legs if leg.side == "back"), opp.legs[0])
+        lay = next((leg for leg in opp.legs if leg.side == "lay"), opp.legs[-1])
+        liability = lay.stake * (lay.price - 1.0)
+        lines.append(f"Back <b>{back.bookmaker}</b> @ {back.price:g} → {_money(back.stake)}")
+        lines.append(
+            f"Lay <b>{lay.bookmaker}</b> @ {lay.price:g} → {_money(lay.stake)} (liability {_money(liability)})"
+        )
+        lines.append("")
+        lines.append(f"Locked profit <b>{_money(opp.profit)}</b> ({(opp.roi or 0) * 100:.2f}%)")
     else:
         lines.append(f"Lands in the gap → <b>both win</b>. Window width {opp.width:g} pt.")
         lines.append(f"Stake split (total {_money(opp.total_stake)}):")

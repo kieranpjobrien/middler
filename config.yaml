@@ -13,10 +13,17 @@ region: au                    # The Odds API region: AU-licensed books only
 # tournament-winner markets (no totals/spreads/matchups), which the middling engine
 # cannot act on. Enabling golf needs outright + Betfair-lay support — see API audit.
 sports:
-  - aussierules_afl
-  - rugbyleague_nrl
-  - basketball_nba
-  - americanfootball_nfl
+  # Golf majors — outright back-lay (back a player at an AU bookie, lay on Betfair).
+  # The Odds API returns both bookie back prices and Betfair lay prices in one call.
+  # US Open is live now; the others activate as each tournament approaches.
+  - golf_us_open_winner
+  - golf_the_open_championship_winner
+  # Team-sport middling is built and ready — uncomment to add (shares the credit
+  # budget below, so the more sports, the thinner each one's polling):
+  # - aussierules_afl
+  # - rugbyleague_nrl
+  # - basketball_nba
+  # - americanfootball_nfl
 
 # Markets where middling/arbitrage live.
 markets:
@@ -45,6 +52,15 @@ odds_api_io_sport_map:
   basketball_nba: basketball
   americanfootball_nfl: american-football
 
+# Per-sport market override. Golf only supports outright (winner) markets — the
+# feed returns bookie back prices plus Betfair lay prices, enabling back-lay.
+# Unlisted sports use the default `markets` above.
+markets_by_sport:
+  golf_us_open_winner: [outrights]
+  golf_the_open_championship_winner: [outrights]
+  golf_masters_tournament_winner: [outrights]
+  golf_pga_championship_winner: [outrights]
+
 # ── Detection thresholds ─────────────────────────────────────────────────────
 detection:
   # Minimum arbitrage profit margin (fraction). 0.005 = 0.5%.
@@ -68,7 +84,9 @@ detection:
 # ── Scheduler / adaptive cadence ─────────────────────────────────────────────
 scheduler:
   # Events enter the ACTIVE polling set this many hours before commence_time.
-  active_window_hours: 72
+  # Widened to 15 days so golf outright futures (open weeks ahead) are polled;
+  # the budget guard caps total calls regardless of how many events are active.
+  active_window_hours: 360
   # Discovery (free /events listing) cadence in seconds.
   discovery_interval_sec: 3600
   # Odds-poll cadence floor/ceiling in seconds. Cadence ramps between these as

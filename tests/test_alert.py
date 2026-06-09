@@ -108,6 +108,52 @@ def test_format_arb_alert() -> None:
     assert "$5.00" in text
 
 
+def _back_lay() -> Opportunity:
+    return Opportunity(
+        kind="back_lay",
+        event_id="g1",
+        sport_key="golf_us_open_winner",
+        commence_time=COMMENCE,
+        market_key="outrights",
+        legs=[
+            OpportunityLeg(
+                bookmaker="tab",
+                market_key="outrights",
+                outcome_name="Matthew Fitzpatrick",
+                side="back",
+                point=None,
+                price=81.0,
+                stake=100.0,
+            ),
+            OpportunityLeg(
+                bookmaker="betfair_ex_au",
+                market_key="outrights_lay",
+                outcome_name="Matthew Fitzpatrick",
+                side="lay",
+                point=None,
+                price=34.0,
+                stake=238.59,
+            ),
+        ],
+        total_stake=100.0,
+        profit=126.66,
+        roi=1.2666,
+        is_risk_free=True,
+        reference_verified=True,
+        observed_at=COMMENCE,
+    )
+
+
+def test_format_back_lay_alert() -> None:
+    text, buttons = format_alert(_back_lay())
+    assert "BACK-LAY" in text
+    assert "Matthew Fitzpatrick" in text
+    assert "Back" in text and "tab" in text and "@ 81" in text
+    assert "Lay" in text and "betfair" in text
+    assert "$126.66" in text
+    assert len(buttons) == 2
+
+
 def test_deep_link_known_and_unknown() -> None:
     assert deep_link("sportsbet") == "https://www.sportsbet.com.au"
     event = Event(id="e", sport_key="s", commence_time=COMMENCE, home_team="A", away_team="B")

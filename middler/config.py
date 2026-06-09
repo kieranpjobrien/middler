@@ -110,6 +110,14 @@ class AppConfig(BaseModel):
     # Maps a The-Odds-API sport key → the odds-api.io slug for the same sport.
     # The secondary feed enriches detection only for sports listed here.
     odds_api_io_sport_map: dict[str, str] = Field(default_factory=dict)
+    # Per-sport market override (some sports reject the default markets — golf only
+    # supports "outrights"). Falls back to ``markets`` for unlisted sports.
+    markets_by_sport: dict[str, list[str]] = Field(default_factory=dict)
+
+    def markets_for(self, sport: str) -> list[str]:
+        """Return the markets to request for a sport (override or default)."""
+        return self.markets_by_sport.get(sport, self.markets)
+
     detection: DetectionConfig = Field(default_factory=DetectionConfig)
     scheduler: SchedulerConfig = Field(default_factory=SchedulerConfig)
     staking: StakingConfig = Field(default_factory=StakingConfig)
