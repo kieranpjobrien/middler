@@ -71,7 +71,7 @@ class FakeClient:
 
 
 def test_orchestrator_records_and_detects(tmp_path) -> None:
-    settings = Settings(duckdb_path=str(tmp_path / "app.duckdb"), telegram_bot_token="")
+    settings = Settings(duckdb_path=str(tmp_path / "app.duckdb"), telegram_bot_token="", _env_file=None)
     config = AppConfig(sports=["aussierules_afl"], markets=["totals"])
     app = MiddlerApp(settings, config)
     app.client = FakeClient()  # type: ignore[assignment]
@@ -138,7 +138,7 @@ class FakeSecondary:
 
 
 def test_secondary_feed_completes_a_middle(tmp_path) -> None:
-    settings = Settings(duckdb_path=str(tmp_path / "app2.duckdb"), telegram_bot_token="", odds_api_io_key="x")
+    settings = Settings(duckdb_path=str(tmp_path / "app2.duckdb"), telegram_bot_token="", odds_api_io_key="x", _env_file=None)
     config = AppConfig(sports=["aussierules_afl"], markets=["totals"], odds_api_io_sport_map={"aussierules_afl": "afl"})
     app = MiddlerApp(settings, config)
     app.client = OneSidedClient()  # type: ignore[assignment]
@@ -151,3 +151,15 @@ def test_secondary_feed_completes_a_middle(tmp_path) -> None:
     assert app.history.opportunity_count() >= 1
     assert alerted >= 1
     app.history.close()
+
+
+def test_run_once_refreshes_report(tmp_path) -> None:
+    settings = Settings(duckdb_path=str(tmp_path / "app3.duckdb"), telegram_bot_token="", _env_file=None)
+    config = AppConfig(sports=["aussierules_afl"], markets=["totals"])
+    config.backcast.report_path = str(tmp_path / "backcast.html")
+    app = MiddlerApp(settings, config)
+    app.client = FakeClient()  # type: ignore[assignment]
+
+    app.run_once(NOW)  # discovers + polls (nothing due yet) + writes the report
+    assert (tmp_path / "backcast.html").exists()
+    app.close()

@@ -55,6 +55,7 @@ class MiddlerApp:
         self._matcher = EntityMatcher()
         self._sport_of: dict[str, str] = {}
         self._last_discovery: datetime | None = None
+        self._last_report: datetime | None = None
         self._stop = False
 
     # ── discovery (free) ─────────────────────────────────────────────────────
@@ -158,12 +159,33 @@ class MiddlerApp:
 
     # ── loop ─────────────────────────────────────────────────────────────────
     def run_once(self, now: datetime | None = None) -> None:
-        """Run a single cycle: discover if due, then poll due events."""
+        """Run a single cycle: discover if due, poll due events, refresh the report."""
         now = now or datetime.now(UTC)
         interval = timedelta(seconds=self.config.scheduler.discovery_interval_sec)
         if self._last_discovery is None or now - self._last_discovery >= interval:
             self.discover(now)
         self.poll_due(now)
+        self._maybe_report(now)
+
+    def _maybe_report(self, now: datetime) -> None:
+        """Regenerate the HTML report on a cadence so the NAS copy stays current."""
+        interval = self.config.backcast.report_interval_sec
+        if interval <= 0:
+            return
+        if self._last_report is not None and (now - self._last_report).total_seconds() < interval:
+            return
+        try:
+            from middler.backcast.replay import run_backcast
+            from middler.backcast.report import render_report
+
+            result = run_backcast(self.history, self.config)
+            render_report(result, self.config, self.config.backcast.report_path)
+            self._last_report = now
+            log.info(
+                "report refreshed → %s (%d opportunities)", self.config.backcast.report_path, len(result.opportunities)
+            )
+        except Exception as exc:  # noqa: BLE001 - a report failure must never stop recording
+            log.warning("report refresh failed: %s", exc)
 
     def run_forever(self) -> None:
         """Run cycles until interrupted (SIGINT/SIGTERM), then shut down cleanly."""

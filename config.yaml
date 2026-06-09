@@ -86,3 +86,6 @@ backcast:
     totals: 0.06
     spreads: 0.05
   report_path: reports/backcast.html
+  # The live app rewrites the HTML report this often (seconds), so the copy on
+  # the NAS share is always current. 0 disables.
+  report_interval_sec: 3600

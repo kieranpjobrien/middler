@@ -9,6 +9,10 @@
 # It is idempotent: safe to re-run to rebuild and restart after a code update.
 set -euo pipefail
 
+# Synology's sudo secure_path can omit /usr/local/bin, where the docker and
+# docker-compose symlinks live — put it on PATH so this works under sudo.
+export PATH="/usr/local/bin:/usr/bin:/bin:${PATH:-}"
+
 cd "$(dirname "$0")/.."
 PROJECT_DIR="$(pwd)"
 

@@ -56,7 +56,7 @@ def _opp(verified: bool = True, with_betfair: bool = True, total: float = 100.0)
 
 
 def _settings(enabled: bool, key: str) -> Settings:
-    return Settings(placement_enabled=enabled, betfair_app_key=key)
+    return Settings(placement_enabled=enabled, betfair_app_key=key, _env_file=None)
 
 
 def test_disabled_refuses() -> None:

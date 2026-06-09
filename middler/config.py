@@ -84,6 +84,8 @@ class StakingConfig(BaseModel):
 class BackcastConfig(BaseModel):
     middle_hit_rate_prior: dict[str, float] = Field(default_factory=lambda: {"totals": 0.06, "spreads": 0.05})
     report_path: str = "reports/backcast.html"
+    # How often the live app regenerates the HTML report (seconds). 0 disables.
+    report_interval_sec: int = 3600
 
 
 class AppConfig(BaseModel):

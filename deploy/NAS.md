@@ -31,12 +31,23 @@ sudo docker-compose logs -f middler          # follow logs
 sudo docker-compose exec middler uv run middler-healthcheck   # quotes recorded so far
 ```
 
-## Generate the backcast report (after data accumulates)
+## Viewing the data
+
+The app **auto-rewrites the HTML report every hour** (`backcast.report_interval_sec`
+in `config.yaml`) to the bind-mounted `reports/` folder, so a current copy always
+sits on the NAS share. To view it from Windows, just open:
+
+```
+\\KieranNAS\docker\middler\reports\backcast.html
+```
+
+(or run `deploy\view-report.cmd` — double-click or pin it). If `KieranNAS` doesn't
+resolve, use `\\192.168.4.42\docker\middler\reports\backcast.html`.
+
+To force a refresh on demand:
 
 ```bash
-cd /volume1/docker/middler
-sudo docker-compose exec middler uv run middler-report
-# writes reports/backcast.html → open \\KieranNAS\docker\middler\reports\backcast.html
+cd /volume1/docker/middler && sudo docker-compose exec middler uv run middler-report
 ```
 
 The `data/`, `logs/`, and `reports/` folders are bind-mounted from
