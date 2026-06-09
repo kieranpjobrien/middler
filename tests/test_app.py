@@ -16,6 +16,8 @@ COMMENCE = NOW + timedelta(hours=10)
 class FakeClient:
     """Stand-in for OddsApiClient returning canned discovery + odds payloads."""
 
+    remaining_credits: int | None = None
+
     def get_events(self, sport_key: str) -> list[dict[str, Any]]:
         return [
             {
@@ -138,7 +140,9 @@ class FakeSecondary:
 
 
 def test_secondary_feed_completes_a_middle(tmp_path) -> None:
-    settings = Settings(duckdb_path=str(tmp_path / "app2.duckdb"), telegram_bot_token="", odds_api_io_key="x", _env_file=None)
+    settings = Settings(
+        duckdb_path=str(tmp_path / "app2.duckdb"), telegram_bot_token="", odds_api_io_key="x", _env_file=None
+    )
     config = AppConfig(sports=["aussierules_afl"], markets=["totals"], odds_api_io_sport_map={"aussierules_afl": "afl"})
     app = MiddlerApp(settings, config)
     app.client = OneSidedClient()  # type: ignore[assignment]

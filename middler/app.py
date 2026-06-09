@@ -15,10 +15,12 @@ from __future__ import annotations
 import signal
 import time
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import httpx
 
 from middler.alert.telegram import Alerter
+from middler.budget import BudgetGuard, caps_from_config
 from middler.config import AppConfig, Settings, load_config, load_settings
 from middler.detection.engine import detect_opportunities
 from middler.ingest.merge import align_and_merge
@@ -52,6 +54,7 @@ class MiddlerApp:
         self.hot = HotStore(settings.redis_url)
         self.scheduler = PollScheduler(config.scheduler)
         self.alerter = Alerter(settings.telegram_bot_token, settings.chat_ids)
+        self.budget = BudgetGuard(Path(settings.duckdb_path).parent / "budget.json", caps_from_config(config.budget))
         self._matcher = EntityMatcher()
         self._sport_of: dict[str, str] = {}
         self._last_discovery: datetime | None = None
@@ -98,6 +101,15 @@ class MiddlerApp:
         for sport, ids in by_sport.items():
             if not sport:
                 continue
+            if not self.budget.allow("the_odds_api", min_reserve=self.config.budget.the_odds_api_min_reserve):
+                log.info(
+                    "the_odds_api budget reached (remaining=%s) — skipping %s this cycle",
+                    self.budget.remaining("the_odds_api"),
+                    sport,
+                )
+                for event_id in ids:
+                    self.scheduler.reschedule(event_id, now)
+                continue
             try:
                 raw = self.client.get_odds(
                     sport, self.config.markets, commence_from=now, commence_to=window_to, event_ids=ids
@@ -107,6 +119,7 @@ class MiddlerApp:
                 for event_id in ids:
                     self.scheduler.reschedule(event_id, now)
                 continue
+            self.budget.record("the_odds_api", remaining=self.client.remaining_credits)
             events, quotes = normalise_odds_response(raw, observed_at=now)
             # Record the primary feed's observations (the backcast stays single-feed
             # and consistent); the secondary feed only enriches live detection.
@@ -131,10 +144,14 @@ class MiddlerApp:
         slug = self.config.odds_api_io_sport_map.get(sport)
         if not slug:
             return events
+        if not self.budget.allow("odds_api_io"):
+            log.info("odds-api.io hourly budget reached — skipping enrichment for %s", sport)
+            return events
         try:
             io_dicts = self.secondary.get_events(slug)
             io_ids = [str(d["id"]) for d in io_dicts][:50]
             io_events = self.secondary.get_odds(io_ids) if io_ids else []
+            self.budget.record("odds_api_io", count=2)  # get_events + get_odds
         except (httpx.HTTPError, KeyError, ValueError) as exc:
             log.warning("secondary feed (odds-api.io) failed for %s: %s", sport, exc)
             return events

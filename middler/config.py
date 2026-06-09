@@ -81,6 +81,17 @@ class StakingConfig(BaseModel):
     bankroll: float = 1000.0  # used only when detection.stake_mode == "kelly"
 
 
+class BudgetConfig(BaseModel):
+    # Free-tier guards. The Odds API: 500 credits/month, 3 credits per team-sport
+    # call → ~5 calls/day lasts a month with a reserve. odds-api.io: 100 req/hour.
+    # OddsPapi: 250 req/month (~8/day). The Odds API balance is also read live from
+    # its response header and polling stops below the reserve.
+    the_odds_api_per_day: int = 5
+    the_odds_api_min_reserve: int = 50
+    odds_api_io_per_hour: int = 90
+    oddspapi_per_day: int = 8
+
+
 class BackcastConfig(BaseModel):
     middle_hit_rate_prior: dict[str, float] = Field(default_factory=lambda: {"totals": 0.06, "spreads": 0.05})
     report_path: str = "reports/backcast.html"
@@ -102,6 +113,7 @@ class AppConfig(BaseModel):
     detection: DetectionConfig = Field(default_factory=DetectionConfig)
     scheduler: SchedulerConfig = Field(default_factory=SchedulerConfig)
     staking: StakingConfig = Field(default_factory=StakingConfig)
+    budget: BudgetConfig = Field(default_factory=BudgetConfig)
     backcast: BackcastConfig = Field(default_factory=BackcastConfig)
 
 

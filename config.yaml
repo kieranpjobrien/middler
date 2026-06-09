@@ -5,15 +5,18 @@
 
 region: au                    # The Odds API region: AU-licensed books only
 
-# Sports to watch. Keys are The-Odds-API sport keys. Per proposal §8, team-sport
-# totals/handicaps are the durable, legally-placeable hunting ground; golf is
-# opportunistic only.
+# Sports to watch. Keys are The-Odds-API sport keys. These four are confirmed live
+# in the AU region with h2h/totals/spreads across ~11 books — i.e. real middling
+# markets (proposal §8). basketball_aus_nbl is omitted (not returned by the feed).
+#
+# Golf is intentionally NOT here: in the AU free feeds it exists only as outright
+# tournament-winner markets (no totals/spreads/matchups), which the middling engine
+# cannot act on. Enabling golf needs outright + Betfair-lay support — see API audit.
 sports:
   - aussierules_afl
   - rugbyleague_nrl
   - basketball_nba
   - americanfootball_nfl
-  - basketball_aus_nbl
 
 # Markets where middling/arbitrage live.
 markets:
@@ -22,21 +25,25 @@ markets:
   - spreads      # handicaps — the middling backbone
 
 # Sharp references for the sanity filter (§4.4). An "edge" that disagrees with
-# these is treated as one book being wrong, not a genuine opportunity.
+# these is treated as one book being wrong, not a genuine opportunity. Pinnacle is
+# dropped — it is not AU-licensed and never appears in the au region; Betfair's
+# exchange is the AU sharp reference.
 sharp_books:
-  - pinnacle
   - betfair_ex_au
 
 # Bookmakers to include (empty = all AU books the feed returns). Listed for
 # documentation; deep-link templates live in middler/alert/deeplinks.py.
 bookmakers: []
 
-# Secondary feed (odds-api.io) enrichment: map each The-Odds-API sport key to the
-# odds-api.io slug for the same sport. Only sports listed here are enriched by the
-# second feed. Leave empty to disable. Confirm the slugs against odds-api.io's
-# /sports endpoint, e.g.:
-#   aussierules_afl: afl
-odds_api_io_sport_map: {}
+# Secondary feed (odds-api.io) enrichment: maps each The-Odds-API sport key to the
+# odds-api.io slug for the same sport (slugs confirmed against its /sports endpoint).
+# Note the free odds-api.io tier returns only 2 bookmakers, so it's a thin top-up to
+# The Odds API's ~11 AU books. rugbyleague_nrl is omitted (odds-api.io lists only a
+# generic "rugby" slug — confirm it's league before enabling).
+odds_api_io_sport_map:
+  aussierules_afl: aussie-rules
+  basketball_nba: basketball
+  americanfootball_nfl: american-football
 
 # ── Detection thresholds ─────────────────────────────────────────────────────
 detection:
@@ -65,11 +72,23 @@ scheduler:
   # Discovery (free /events listing) cadence in seconds.
   discovery_interval_sec: 3600
   # Odds-poll cadence floor/ceiling in seconds. Cadence ramps between these as
-  # an event nears kick-off (and with recent volatility).
-  poll_min_sec: 60
-  poll_max_sec: 3600
+  # an event nears kick-off. Widened for the free trial so far-out events poll
+  # rarely and the limited daily credit budget is spent near kick-offs (the hard
+  # cap is enforced by the budget section below, not by cadence).
+  poll_min_sec: 300
+  poll_max_sec: 21600
   # Stop polling this many seconds before commence_time (never poll in-play).
   stop_before_commence_sec: 0
+
+# ── Free-tier budget guards ──────────────────────────────────────────────────
+# The Odds API: 500 credits/month, 3 credits per team-sport call (h2h+totals+
+# spreads). 5 calls/day × 3 = ~450/month, leaving a reserve. The live balance is
+# also read from the API's response header and polling stops below the reserve.
+budget:
+  the_odds_api_per_day: 5
+  the_odds_api_min_reserve: 50
+  odds_api_io_per_hour: 90      # free tier allows 100/hour
+  oddspapi_per_day: 8           # free tier allows ~250/month (client not yet wired)
 
 # ── Stake calculator defaults (for the Telegram alert) ───────────────────────
 staking:
