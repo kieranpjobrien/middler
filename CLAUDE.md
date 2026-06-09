@@ -71,8 +71,14 @@ it — open/fund Betfair and buy the ~A$940 live key. Keep `PLACEMENT_ENABLED=fa
 until then.
 
 ## Heads-up
-- No git remote yet — flag and offer to create one (`kieranpjobrien`) before relying on push.
-- Second odds feed (odds-api.io) is a documented extension point (`Feed` protocol), not
-  yet implemented — The Odds API is the working foundation.
+- Remote: `github.com/kieranpjobrien/middler` (private). `main` tracks `origin/main`.
+- Two feeds: The Odds API (primary — drives discovery/scheduling/recording) and
+  odds-api.io (secondary — enriches *live detection* via `ingest/merge.py`, matching
+  fixtures across feeds and deduping books by canonical key). The secondary only runs
+  for sports listed in `config.yaml: odds_api_io_sport_map` (confirm the slugs against
+  odds-api.io's `/sports`). The backcast stays single-feed (primary) for consistency.
+- Back-and-lay (the "lay strategy") maths is built and tested (`evaluate_back_lay`) but
+  the *detector* isn't wired — it needs Betfair exchange **lay** prices (The Odds API
+  only gives Betfair's back side). The free delayed Betfair key unlocks that.
 - Live Betfair placement needs odds-api event → Betfair `market_id`/`selection_id`
   resolution (`listMarketCatalogue`); deliberately not wired so nothing places by accident.

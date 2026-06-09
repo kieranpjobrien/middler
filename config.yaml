@@ -31,6 +31,13 @@ sharp_books:
 # documentation; deep-link templates live in middler/alert/deeplinks.py.
 bookmakers: []
 
+# Secondary feed (odds-api.io) enrichment: map each The-Odds-API sport key to the
+# odds-api.io slug for the same sport. Only sports listed here are enriched by the
+# second feed. Leave empty to disable. Confirm the slugs against odds-api.io's
+# /sports endpoint, e.g.:
+#   aussierules_afl: afl
+odds_api_io_sport_map: {}
+
 # ── Detection thresholds ─────────────────────────────────────────────────────
 detection:
   # Minimum arbitrage profit margin (fraction). 0.005 = 0.5%.

@@ -21,9 +21,12 @@ import httpx
 from middler.alert.telegram import Alerter
 from middler.config import AppConfig, Settings, load_config, load_settings
 from middler.detection.engine import detect_opportunities
+from middler.ingest.merge import align_and_merge
 from middler.ingest.normaliser import normalise_event, normalise_odds_response
 from middler.ingest.odds_api import OddsApiClient
+from middler.ingest.oddsapi_io import OddsApiIoClient
 from middler.logging_setup import get_logger, setup_logging
+from middler.match.entity import EntityMatcher
 from middler.models import Event, EventStatus
 from middler.schedule.scheduler import PollScheduler
 from middler.schedule.state_machine import is_pollable, next_status
@@ -42,10 +45,14 @@ class MiddlerApp:
         self.settings = settings
         self.config = config
         self.client = OddsApiClient(settings.the_odds_api_key, region=config.region)
+        self.secondary = (
+            OddsApiIoClient(settings.odds_api_io_key, region=config.region) if settings.odds_api_io_key else None
+        )
         self.history = HistoryStore(settings.duckdb_path)
         self.hot = HotStore(settings.redis_url)
         self.scheduler = PollScheduler(config.scheduler)
         self.alerter = Alerter(settings.telegram_bot_token, settings.chat_ids)
+        self._matcher = EntityMatcher()
         self._sport_of: dict[str, str] = {}
         self._last_discovery: datetime | None = None
         self._stop = False
@@ -100,14 +107,37 @@ class MiddlerApp:
                     self.scheduler.reschedule(event_id, now)
                 continue
             events, quotes = normalise_odds_response(raw, observed_at=now)
+            # Record the primary feed's observations (the backcast stays single-feed
+            # and consistent); the secondary feed only enriches live detection.
             self.history.write_quotes(quotes)
             self.history.upsert_events(events)
-            for event in events:
+            for event in self._enrich_with_secondary(sport, events):
                 alerted += self._detect_and_alert(event, now)
             for event_id in ids:
                 self.scheduler.reschedule(event_id, now)
         self._ping_healthcheck()
         return alerted
+
+    def _enrich_with_secondary(self, sport: str, events: list[Event]) -> list[Event]:
+        """Merge in odds-api.io books for the same fixtures, if configured.
+
+        Returns the events unchanged when the secondary feed is disabled, the
+        sport is unmapped, or the secondary call fails — detection then simply
+        runs on the primary feed alone.
+        """
+        if self.secondary is None:
+            return events
+        slug = self.config.odds_api_io_sport_map.get(sport)
+        if not slug:
+            return events
+        try:
+            io_dicts = self.secondary.get_events(slug)
+            io_ids = [str(d["id"]) for d in io_dicts][:50]
+            io_events = self.secondary.get_odds(io_ids) if io_ids else []
+        except (httpx.HTTPError, KeyError, ValueError) as exc:
+            log.warning("secondary feed (odds-api.io) failed for %s: %s", sport, exc)
+            return events
+        return align_and_merge(events, io_events, self._matcher)
 
     def _detect_and_alert(self, event: Event, now: datetime) -> int:
         opps = detect_opportunities(
@@ -164,6 +194,8 @@ class MiddlerApp:
     def close(self) -> None:
         """Close clients and stores."""
         self.client.close()
+        if self.secondary is not None:
+            self.secondary.close()
         self.history.close()
 
 

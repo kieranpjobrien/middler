@@ -7,6 +7,7 @@ from typing import Any
 
 from middler.app import MiddlerApp
 from middler.config import AppConfig, Settings
+from middler.models import BookMarket, Event, Outcome
 
 NOW = datetime(2026, 6, 9, 0, 0, tzinfo=UTC)
 COMMENCE = NOW + timedelta(hours=10)
@@ -83,5 +84,70 @@ def test_orchestrator_records_and_detects(tmp_path) -> None:
 
     assert app.history.quote_count() == 4  # 2 books × Over/Under
     assert app.history.opportunity_count() >= 1  # the middle was recorded
+    assert alerted >= 1
+    app.history.close()
+
+
+class OneSidedClient(FakeClient):
+    """Primary feed that sees only one side — no middle on its own."""
+
+    def get_odds(self, sport_key: str, markets: list[str], **_: Any) -> list[dict[str, Any]]:
+        return [
+            {
+                "id": "evt1",
+                "sport_key": sport_key,
+                "commence_time": COMMENCE.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "home_team": "Carlton",
+                "away_team": "Collingwood",
+                "bookmakers": [
+                    {
+                        "key": "sportsbet",
+                        "markets": [{"key": "totals", "outcomes": [{"name": "Over", "price": 1.95, "point": 71.5}]}],
+                    },
+                ],
+            }
+        ]
+
+
+class FakeSecondary:
+    """Stand-in for OddsApiIoClient supplying the missing side of the middle."""
+
+    def get_events(self, sport_slug: str) -> list[dict[str, Any]]:
+        return [{"id": 999, "home": "Carlton", "away": "Collingwood"}]
+
+    def get_odds(self, event_ids: list[str], bookmakers: list[str] | None = None) -> list[Event]:
+        return [
+            Event(
+                id="999",
+                sport_key="",
+                commence_time=COMMENCE,
+                home_team="Carlton",
+                away_team="Collingwood",
+                book_markets=[
+                    BookMarket(
+                        bookmaker="tab",
+                        market_key="totals",
+                        outcomes=[Outcome(name="Under", price=1.95, point=72.5)],
+                    )
+                ],
+            )
+        ]
+
+    def close(self) -> None:  # pragma: no cover
+        pass
+
+
+def test_secondary_feed_completes_a_middle(tmp_path) -> None:
+    settings = Settings(duckdb_path=str(tmp_path / "app2.duckdb"), telegram_bot_token="", odds_api_io_key="x")
+    config = AppConfig(sports=["aussierules_afl"], markets=["totals"], odds_api_io_sport_map={"aussierules_afl": "afl"})
+    app = MiddlerApp(settings, config)
+    app.client = OneSidedClient()  # type: ignore[assignment]
+    app.secondary = FakeSecondary()  # type: ignore[assignment]
+
+    app.discover(NOW)
+    alerted = app.poll_due(NOW + timedelta(hours=1))
+
+    # The primary alone has no middle; only the merged book set does.
+    assert app.history.opportunity_count() >= 1
     assert alerted >= 1
     app.history.close()

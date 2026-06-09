@@ -94,6 +94,9 @@ class AppConfig(BaseModel):
     markets: list[str] = Field(default_factory=lambda: ["h2h", "totals", "spreads"])
     sharp_books: list[str] = Field(default_factory=lambda: ["pinnacle", "betfair_ex_au"])
     bookmakers: list[str] = Field(default_factory=list)
+    # Maps a The-Odds-API sport key → the odds-api.io slug for the same sport.
+    # The secondary feed enriches detection only for sports listed here.
+    odds_api_io_sport_map: dict[str, str] = Field(default_factory=dict)
     detection: DetectionConfig = Field(default_factory=DetectionConfig)
     scheduler: SchedulerConfig = Field(default_factory=SchedulerConfig)
     staking: StakingConfig = Field(default_factory=StakingConfig)

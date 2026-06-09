@@ -23,6 +23,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
+from middler.books import canonical_book
 from middler.config import DetectionConfig, StakingConfig
 from middler.detection.maths import (
     arbitrage,
@@ -67,7 +68,7 @@ def detect_opportunities(
         Opportunities sorted by attractiveness (risk-free first, then EV/margin).
     """
     opps: list[Opportunity] = []
-    sharp_set = set(sharp_books)
+    sharp_set = {canonical_book(b) for b in sharp_books}
     for market_key in ("h2h", "totals", "spreads"):
         books = [bm for bm in event.book_markets if bm.market_key == market_key]
         if not books:
@@ -365,7 +366,7 @@ def _verify_against_sharp(legs: list[_Leg], books: list[BookMarket], sharp_set: 
     """
     sharp_prices: dict[tuple[str, float | None], float] = {}
     for bm in books:
-        if bm.bookmaker in sharp_set:
+        if canonical_book(bm.bookmaker) in sharp_set:
             for o in bm.outcomes:
                 sharp_prices[(o.name, o.point)] = o.price
     if not sharp_prices:
