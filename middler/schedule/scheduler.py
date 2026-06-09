@@ -108,6 +108,16 @@ class PollScheduler:
             out.append(event_id)
         return out
 
+    def next_due_epoch(self) -> float | None:
+        """Return the soonest scheduled poll time (epoch seconds), or None if idle."""
+        while self._heap and self._scheduled.get(self._heap[0][1]) != self._heap[0][0]:
+            heapq.heappop(self._heap)  # discard stale heads
+        return self._heap[0][0] if self._heap else None
+
+    def is_tracked(self, event_id: str) -> bool:
+        """Return True if the event is currently in the working set."""
+        return event_id in self._commence
+
     def drop(self, event_id: str) -> None:
         """Remove an event from tracking entirely (e.g. it went live or settled)."""
         self._scheduled.pop(event_id, None)
