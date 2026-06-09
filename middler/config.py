@@ -110,6 +110,9 @@ class AppConfig(BaseModel):
     # Maps a The-Odds-API sport key → the odds-api.io slug for the same sport.
     # The secondary feed enriches detection only for sports listed here.
     odds_api_io_sport_map: dict[str, str] = Field(default_factory=dict)
+    # Exact odds-api.io bookmaker names to request (from GET /v3/bookmakers). The
+    # free tier allows two selected books; paid plans unlock the AU books.
+    odds_api_io_bookmakers: list[str] = Field(default_factory=lambda: ["Bet365", "Betfair Exchange"])
     # Per-sport market override (some sports reject the default markets — golf only
     # supports "outrights"). Falls back to ``markets`` for unlisted sports.
     markets_by_sport: dict[str, list[str]] = Field(default_factory=dict)

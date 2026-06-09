@@ -5,26 +5,29 @@ A second source behind the :class:`~middler.ingest.feed.Feed` protocol (proposal
 frequent polling once The Odds API's monthly credits run thin.
 
 Its JSON differs from The Odds API, so this module owns its own normaliser into
-the common :class:`~middler.models.Event` schema. Verified response shape
-(``GET /odds?eventId=...``)::
+the common :class:`~middler.models.Event` schema. Shape verified against the LIVE
+API (``GET /odds?eventId=...&bookmakers=...``)::
 
     {
         "id": 123456,
-        "home": "Man United",
-        "away": "Liverpool",
-        "date": "2025-10-15T15:00:00Z",
+        "home": "Guatemala",
+        "away": "El Salvador",
+        "date": "2026-06-10T...",
         "status": "pending",
         "bookmakers": {
             "Bet365": [
-                {"name": "ML", "odds": [{"home": "2.10", "draw": "3.40", "away": "3.20"}]},
-                {"name": "Asian Handicap", "odds": [{"hdp": -0.5, "home": "1.95", "away": "1.85"}]},
-                {"name": "Over/Under", "odds": [{"max": 2.5, "over": "1.90", "under": "1.90"}]},
+                {"name": "ML", "odds": [{"home": "4.00", "draw": "3.90", "away": "1.66"}]},
+                {"name": "Spread", "odds": [{"hdp": 0.75, "home": "1.85", "away": "1.95"}]},
+                {"name": "Totals", "odds": [{"hdp": 2.75, "over": "1.82", "under": "1.97"}]},
             ]
         },
     }
 
-Note: ``bookmakers`` is a *dict* (book → markets); prices are *strings*; the
-handicap is a single ``hdp`` on the home side; the total line is ``max``.
+Notes (the published docs are stale): ``bookmakers`` is a *dict* (book → markets);
+prices are *strings*; the spread handicap is a single ``hdp`` on the home side;
+the **total line is also ``hdp``** (not ``max``); ``bookmakers`` is a **required**
+query param (free tier = two selected books). Betfair entries also carry lay
+prices (``layHome``/``layOver``…), unused for now.
 """
 
 from __future__ import annotations
@@ -49,13 +52,17 @@ MARKET_ALIASES = {
     "h2h": "h2h",
     "match winner": "h2h",
     "asian handicap": "spreads",
+    "alternative asian handicap": "spreads",
     "handicap": "spreads",
+    "spread": "spreads",
     "spreads": "spreads",
     "point spread": "spreads",
     "over/under": "totals",
     "totals": "totals",
     "total": "totals",
     "goals over/under": "totals",
+    "alternative goal line": "totals",
+    "goal line": "totals",
 }
 
 
@@ -92,7 +99,8 @@ def _outcomes_for(market_key: str, entry: dict[str, Any], home: str, away: str) 
             if away_price is not None:
                 outcomes.append(Outcome(name=away, price=away_price, point=-float(hdp)))
     elif market_key == "totals":
-        line = entry.get("max")
+        # The live API carries the total line in "hdp"; the docs sample used "max".
+        line = entry.get("hdp") if entry.get("hdp") is not None else entry.get("max")
         if line is not None:
             over_price, under_price = _f(entry.get("over")), _f(entry.get("under"))
             if over_price is not None:
@@ -182,20 +190,27 @@ class OddsApiIoClient:
         """List upcoming events for a sport slug."""
         return list(self._get("/events", {"sport": sport_slug}))
 
-    def get_odds(self, event_ids: list[str], bookmakers: list[str] | None = None) -> list[Event]:
+    def get_odds(self, event_ids: list[str], bookmakers: list[str]) -> list[Event]:
         """Fetch and normalise odds for one or more events.
+
+        The ``bookmakers`` argument is **required** by the API (exact names from
+        ``GET /v3/bookmakers``, e.g. ``"Bet365"``, ``"Sportsbet.com.au"``). The
+        free tier caps you at two *selected* books. Note: ``/odds`` takes no
+        ``regions`` param — book region is implied by the bookmaker names.
 
         Args:
             event_ids: odds-api.io event ids.
-            bookmakers: Restrict to these book keys (optional).
+            bookmakers: Exact bookmaker names to fetch.
 
         Returns:
             Normalised :class:`Event` objects (sport_key left blank — set by the
             caller that knows which sport it queried).
         """
-        params: dict[str, Any] = {"regions": self.region}
-        if bookmakers:
-            params["bookmakers"] = ",".join(bookmakers)
+        if not bookmakers:
+            raise ValueError("odds-api.io requires at least one bookmaker (see GET /v3/bookmakers)")
+        if not event_ids:
+            return []
+        params: dict[str, Any] = {"bookmakers": ",".join(bookmakers)}
         if len(event_ids) == 1:
             params["eventId"] = event_ids[0]
             raw = self._get("/odds", params)
@@ -203,5 +218,5 @@ class OddsApiIoClient:
         else:
             params["eventIds"] = ",".join(event_ids)
             raw = self._get("/odds/multi", params)
-            events = list(raw)
+            events = list(raw) if isinstance(raw, list) else []
         return [normalise_io_event(ev, sport_key="") for ev in events]

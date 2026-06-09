@@ -49,12 +49,12 @@ def _middle(args: argparse.Namespace) -> None:
 
 
 def _backlay(args: argparse.Namespace) -> None:
-    bl = evaluate_back_lay(
-        back_odds=args.back, lay_odds=args.lay, back_stake=args.stake, commission=args.commission
-    )
+    bl = evaluate_back_lay(back_odds=args.back, lay_odds=args.lay, back_stake=args.stake, commission=args.commission)
     print(f"BACK-LAY - back @ {args.back:g}  +  lay @ {args.lay:g} ({args.commission * 100:g}% commission)")
     print(f"  Back stake {_money(args.stake)} -> lay {_money(bl.lay_stake)} (liability {_money(bl.lay_liability)})")
-    print(f"  Locked profit: {_money(bl.guaranteed_profit)} ({bl.roi * 100:.2f}%) {'[risk-free]' if bl.is_value else '[not value]'}")
+    print(
+        f"  Locked profit: {_money(bl.guaranteed_profit)} ({bl.roi * 100:.2f}%) {'[risk-free]' if bl.is_value else '[not value]'}"
+    )
 
 
 def _arb(args: argparse.Namespace) -> None:
@@ -62,8 +62,8 @@ def _arb(args: argparse.Namespace) -> None:
     print(f"ARB - odds {', '.join(f'{o:g}' for o in args.odds)} (stake {_money(args.stake)})")
     print(f"  Book sum {r.implied_sum:.4f}, margin {r.margin * 100:.2f}%")
     print(f"  Stakes: {', '.join(_money(s) for s in r.stakes)}")
-    verdict = f"profit {_money(r.profit)} ({r.roi * 100:.2f}%)" if r.is_arbitrage else "NOT an arbitrage (book sum ≥ 1)"
-    print(f"  Guaranteed return {_money(r.guaranteed_return)} → {verdict}")
+    verdict = f"profit {_money(r.profit)} ({r.roi * 100:.2f}%)" if r.is_arbitrage else "NOT an arbitrage (book sum >= 1)"
+    print(f"  Guaranteed return {_money(r.guaranteed_return)} -> {verdict}")
 
 
 def main() -> None:

@@ -52,6 +52,13 @@ odds_api_io_sport_map:
   basketball_nba: basketball
   americanfootball_nfl: american-football
 
+# Exact odds-api.io bookmaker names to request (from GET /v3/bookmakers). The free
+# tier allows only two selected books; a paid plan unlocks the AU books
+# (Sportsbet.com.au, TABtouch AU, PointsBet AU, Ladbrokes, Unibet AU, ...).
+odds_api_io_bookmakers:
+  - Bet365
+  - Betfair Exchange
+
 # Per-sport market override. Golf only supports outright (winner) markets — the
 # feed returns bookie back prices plus Betfair lay prices, enabling back-lay.
 # Unlisted sports use the default `markets` above.

@@ -26,6 +26,7 @@ _CANONICAL = {
     "pointsbet": "pointsbet",
     "ladbrokes": "ladbrokes",
     "bet365": "bet365",
+    "bet365nolatency": "bet365",
     "sportsbet": "sportsbet",
     "tab": "tab",
     "tabtouch": "tabtouch",

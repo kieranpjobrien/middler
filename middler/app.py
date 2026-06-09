@@ -150,7 +150,7 @@ class MiddlerApp:
         try:
             io_dicts = self.secondary.get_events(slug)
             io_ids = [str(d["id"]) for d in io_dicts][:50]
-            io_events = self.secondary.get_odds(io_ids) if io_ids else []
+            io_events = self.secondary.get_odds(io_ids, self.config.odds_api_io_bookmakers) if io_ids else []
             self.budget.record("odds_api_io", count=2)  # get_events + get_odds
         except (httpx.HTTPError, KeyError, ValueError) as exc:
             log.warning("secondary feed (odds-api.io) failed for %s: %s", sport, exc)
