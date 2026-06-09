@@ -39,6 +39,7 @@ middler-chatid = "middler.tools.get_chat_id:main"
 middler-report = "middler.backcast.report:main"
 middler-backup = "middler.tools.backup:main"
 middler-seed-demo = "middler.tools.seed_demo:main"
+middler-calc = "middler.tools.calc:main"
 
 [tool.ruff]
 line-length = 120

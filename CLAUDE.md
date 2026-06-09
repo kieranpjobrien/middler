@@ -52,6 +52,8 @@ uv run mypy                    # strict, clean
 uv run middler                 # run the live alert-only loop (needs API keys)
 uv run python -m middler.tools.seed_demo   # build a populated DEMO report with no keys
 uv run middler-report          # backcast the real recorded history → reports/backcast.html
+uv run middler-calc middle --over 71.5 --over-odds 1.91 --under 73.5 --under-odds 1.95  # manual middle calc
+# (golf player score-totals aren't in any odds feed — read off the bookie sites and calc by hand)
 docker compose up -d           # deploy (middler + redis, outbound-only)
 ```
 
