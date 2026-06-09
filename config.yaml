@@ -64,6 +64,7 @@ scheduler:
 staking:
   default_total_stake: 100.0      # AUD, used to render the suggested split
   two_step_confirm_above: 200.0   # AUD, require a second confirm above this
+  bankroll: 1000.0                # AUD, only used when detection.stake_mode = kelly
 
 # ── Backcast / report ────────────────────────────────────────────────────────
 backcast:
