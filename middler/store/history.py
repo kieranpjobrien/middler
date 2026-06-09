@@ -21,9 +21,18 @@ from types import TracebackType
 
 import duckdb
 
-from middler.models import OddsQuote, Opportunity
+from middler.models import Event, OddsQuote, Opportunity
 
 _SCHEMA = """
+CREATE TABLE IF NOT EXISTS events (
+    event_id      VARCHAR PRIMARY KEY,
+    sport_key     VARCHAR,
+    sport_title   VARCHAR,
+    commence_time TIMESTAMPTZ,
+    home_team     VARCHAR,
+    away_team     VARCHAR
+);
+
 CREATE TABLE IF NOT EXISTS odds_quotes (
     event_id      VARCHAR,
     sport_key     VARCHAR,
@@ -102,6 +111,22 @@ class HistoryStore:
         self._conn.close()
 
     # ── writes ───────────────────────────────────────────────────────────────
+    def upsert_events(self, events: list[Event]) -> None:
+        """Insert or update event metadata (commence time, teams) by event id."""
+        for e in events:
+            self._conn.execute(
+                """
+                INSERT INTO events VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT (event_id) DO UPDATE SET
+                    sport_key = excluded.sport_key,
+                    sport_title = excluded.sport_title,
+                    commence_time = excluded.commence_time,
+                    home_team = excluded.home_team,
+                    away_team = excluded.away_team
+                """,
+                [e.id, e.sport_key, e.sport_title, e.commence_time, e.home_team, e.away_team],
+            )
+
     def write_quotes(self, quotes: list[OddsQuote]) -> int:
         """Append a batch of odds observations.
 
@@ -204,6 +229,22 @@ class HistoryStore:
         else:
             rel = self._conn.execute("SELECT * FROM odds_quotes ORDER BY observed_at")
         return rel.pl()
+
+    def load_events(self) -> dict[str, dict[str, object]]:
+        """Return event metadata keyed by event id (for backcast reconstruction)."""
+        rows = self._conn.execute(
+            "SELECT event_id, sport_key, sport_title, commence_time, home_team, away_team FROM events"
+        ).fetchall()
+        return {
+            r[0]: {
+                "sport_key": r[1],
+                "sport_title": r[2],
+                "commence_time": r[3],
+                "home_team": r[4],
+                "away_team": r[5],
+            }
+            for r in rows
+        }
 
     def distinct_observation_times(self, event_id: str, market_key: str) -> list[datetime]:
         """Return the sorted distinct observation timestamps for an event+market."""
