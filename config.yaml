@@ -18,10 +18,10 @@ sports:
   # US Open is live now; the others activate as each tournament approaches.
   - golf_us_open_winner
   - golf_the_open_championship_winner
-  # Team-sport middling is built and ready — uncomment to add (shares the credit
-  # budget below, so the more sports, the thinner each one's polling):
-  # - aussierules_afl
-  # - rugbyleague_nrl
+  # Team-sport middling — the durable, multi-book hunting ground (in season now).
+  - aussierules_afl
+  - rugbyleague_nrl
+  # NBA finals / NFL are out of season here — add back when they return:
   # - basketball_nba
   # - americanfootball_nfl
 
@@ -110,10 +110,9 @@ scheduler:
 # spreads). 5 calls/day × 3 = ~450/month, leaving a reserve. The live balance is
 # also read from the API's response header and polling stops below the reserve.
 budget:
-  # Golf outright calls cost only 1 credit each (one market), so 10/day = ~300
-  # credits/month — well within 500, with the reserve as a hard backstop. If you
-  # re-enable team sports (3 credits/call), drop this to ~5.
-  the_odds_api_per_day: 10
+  # Mixed now: golf outright = 1 credit/call, team sports = 3 credits/call. 5
+  # calls/day worst-case 15 credits = ~450/month, within 500, reserve backstops.
+  the_odds_api_per_day: 5
   the_odds_api_min_reserve: 50
   odds_api_io_per_hour: 90      # free tier allows 100/hour
   oddspapi_per_day: 8           # free tier allows ~250/month (client not yet wired)
