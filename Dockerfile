@@ -18,6 +18,6 @@ COPY config.yaml ./
 RUN uv sync --frozen --no-dev && mkdir -p data logs reports
 
 # The healthcheck proves the process can open its database.
-HEALTHCHECK --interval=5m --timeout=30s --retries=3 CMD uv run middler-healthcheck || exit 1
+HEALTHCHECK --interval=5m --timeout=30s --retries=3 --start-period=90s CMD uv run middler-healthcheck || exit 1
 
 CMD ["uv", "run", "middler"]

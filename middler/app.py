@@ -213,9 +213,22 @@ class MiddlerApp:
         try:
             while not self._stop:
                 self.run_once()
+                self._write_heartbeat()
                 time.sleep(tick)
         finally:
             self.close()
+
+    def _write_heartbeat(self) -> None:
+        """Touch a heartbeat file each cycle for the container healthcheck.
+
+        The healthcheck can't open DuckDB (the running app holds the single-writer
+        lock), so liveness is signalled by the freshness of this file instead.
+        """
+        try:
+            path = Path(self.settings.duckdb_path).parent / "heartbeat"
+            path.write_text(datetime.now(UTC).isoformat())
+        except OSError as exc:
+            log.debug("heartbeat write failed: %s", exc)
 
     def _handle_signal(self, *_: object) -> None:
         log.info("shutdown signal received")
