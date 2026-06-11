@@ -44,6 +44,7 @@ from middler.models import BookMarket, Event, Outcome
 log = get_logger(__name__)
 
 BASE_URL = "https://api.odds-api.io/v3"
+_MULTI_CHUNK = 10  # /odds/multi rejects long eventIds lists
 
 # Map odds-api.io market display names → our market keys.
 MARKET_ALIASES = {
@@ -248,13 +249,15 @@ class OddsApiIoClient:
             raise ValueError("odds-api.io requires at least one bookmaker (see GET /v3/bookmakers)")
         if not event_ids:
             return []
-        params: dict[str, Any] = {"bookmakers": ",".join(bookmakers)}
+        books = ",".join(bookmakers)
         if len(event_ids) == 1:
-            params["eventId"] = event_ids[0]
-            raw = self._get("/odds", params)
+            raw = self._get("/odds", {"bookmakers": books, "eventId": event_ids[0]})
             events = [raw] if isinstance(raw, dict) else list(raw)
         else:
-            params["eventIds"] = ",".join(event_ids)
-            raw = self._get("/odds/multi", params)
-            events = list(raw) if isinstance(raw, list) else []
+            # /odds/multi rejects long id lists, so request in chunks.
+            events = []
+            for i in range(0, len(event_ids), _MULTI_CHUNK):
+                batch = ",".join(event_ids[i : i + _MULTI_CHUNK])
+                raw = self._get("/odds/multi", {"bookmakers": books, "eventIds": batch})
+                events.extend(raw if isinstance(raw, list) else [])
         return [normalise_io_event(ev, sport_key="") for ev in events]

@@ -38,6 +38,7 @@ from middler.store.hot import HotStore
 log = get_logger(__name__)
 
 ALERT_COOLDOWN_SEC = 1800  # don't re-alert the same structural opportunity within 30 min
+SECONDARY_MAX_EVENTS = 10  # per secondary poll: the soonest fixtures (bounds the /odds/multi call)
 
 
 class MiddlerApp:
@@ -209,7 +210,9 @@ class MiddlerApp:
                 continue
             try:
                 io_dicts = self.secondary.get_events(slug)
-                io_ids = [str(d["id"]) for d in io_dicts if self._io_event_soon(d, now, window_to)][:50]
+                soon = [d for d in io_dicts if self._io_event_soon(d, now, window_to)]
+                soon.sort(key=lambda d: str(d.get("startTime") or d.get("date") or ""))
+                io_ids = [str(d["id"]) for d in soon[:SECONDARY_MAX_EVENTS]]
                 if not io_ids:
                     self.budget.record("odds_api_io", count=1)
                     continue
