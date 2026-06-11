@@ -24,7 +24,7 @@ from middler.budget import BudgetGuard, caps_from_config
 from middler.config import AppConfig, Settings, load_config, load_settings
 from middler.detection.engine import detect_opportunities
 from middler.ingest.merge import align_and_merge
-from middler.ingest.normaliser import normalise_event, normalise_odds_response
+from middler.ingest.normaliser import normalise_event, normalise_odds_response, quotes_from_event
 from middler.ingest.odds_api import OddsApiClient
 from middler.ingest.oddsapi_io import OddsApiIoClient
 from middler.logging_setup import get_logger, setup_logging
@@ -58,6 +58,7 @@ class MiddlerApp:
         self._matcher = EntityMatcher()
         self._sport_of: dict[str, str] = {}
         self._last_discovery: datetime | None = None
+        self._last_secondary: datetime | None = None
         self._last_report: datetime | None = None
         self._stop = False
 
@@ -174,6 +175,68 @@ class MiddlerApp:
                 count += 1
         return count
 
+    # ── secondary feed: independent, high-frequency odds-api.io polling ──────
+    def _maybe_secondary(self, now: datetime) -> None:
+        """Poll the secondary feed on its own fast cadence (rate-, not credit-, limited)."""
+        interval = self.config.scheduler.secondary_interval_sec
+        if interval <= 0 or self.secondary is None:
+            return
+        if self._last_secondary is not None and (now - self._last_secondary).total_seconds() < interval:
+            return
+        try:
+            self.poll_secondary(now)
+        except Exception as exc:  # noqa: BLE001 - the secondary feed must never stop the loop
+            log.warning("secondary poll error: %s", exc)
+        self._last_secondary = now
+
+    def poll_secondary(self, now: datetime) -> int:
+        """Independently poll odds-api.io for near-term fixtures, record and detect.
+
+        Unlike the cross-feed enrichment in :meth:`poll_due`, this runs on its own
+        frequent cadence and records the observations — turning odds-api.io's
+        Bet365 + Betfair (incl. lay) into high-frequency back-lay and middle signal.
+
+        Returns:
+            The number of opportunities alerted on this pass.
+        """
+        if self.secondary is None:
+            return 0
+        window_to = now + timedelta(hours=self.config.scheduler.active_window_hours)
+        alerted = 0
+        for sport in self.config.sports:
+            slug = self.config.odds_api_io_sport_map.get(sport)
+            if not slug or not self.budget.allow("odds_api_io"):
+                continue
+            try:
+                io_dicts = self.secondary.get_events(slug)
+                io_ids = [str(d["id"]) for d in io_dicts if self._io_event_soon(d, now, window_to)][:50]
+                if not io_ids:
+                    self.budget.record("odds_api_io", count=1)
+                    continue
+                io_events = self.secondary.get_odds(io_ids, self.config.odds_api_io_bookmakers)
+                self.budget.record("odds_api_io", count=2)
+            except (httpx.HTTPError, KeyError, ValueError) as exc:
+                log.warning("secondary poll (odds-api.io) failed for %s: %s", sport, exc)
+                continue
+            for event in io_events:
+                event.sport_key = sport
+                self.history.write_quotes(quotes_from_event(event, now))
+                self.history.upsert_events([event])
+                alerted += self._detect_and_alert(event, now)
+        return alerted
+
+    @staticmethod
+    def _io_event_soon(raw: dict[str, object], now: datetime, window_to: datetime) -> bool:
+        """True if an odds-api.io event starts within the active window (or has no time)."""
+        start = raw.get("startTime") or raw.get("date")
+        if not start:
+            return True
+        try:
+            dt = datetime.fromisoformat(str(start).replace("Z", "+00:00"))
+        except ValueError:
+            return True
+        return now <= dt <= window_to
+
     # ── loop ─────────────────────────────────────────────────────────────────
     def run_once(self, now: datetime | None = None) -> None:
         """Run a single cycle: discover if due, poll due events, refresh the report."""
@@ -182,6 +245,7 @@ class MiddlerApp:
         if self._last_discovery is None or now - self._last_discovery >= interval:
             self.discover(now)
         self.poll_due(now)
+        self._maybe_secondary(now)
         self._maybe_report(now)
 
     def _maybe_report(self, now: datetime) -> None:

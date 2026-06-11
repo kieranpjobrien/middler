@@ -157,6 +157,59 @@ def test_secondary_feed_completes_a_middle(tmp_path) -> None:
     app.history.close()
 
 
+class FakeSecondaryBackLay:
+    """odds-api.io stand-in returning a Bet365 back + Betfair lay → a back-lay."""
+
+    def get_events(self, sport_slug: str) -> list[dict[str, Any]]:
+        return [
+            {"id": 777, "home": "Carlton", "away": "Collingwood", "startTime": COMMENCE.strftime("%Y-%m-%dT%H:%M:%SZ")}
+        ]
+
+    def get_odds(self, event_ids: list[str], bookmakers: list[str]) -> list[Event]:
+        return [
+            Event(
+                id="777",
+                sport_key="",
+                commence_time=COMMENCE,
+                home_team="Carlton",
+                away_team="Collingwood",
+                book_markets=[
+                    BookMarket(
+                        bookmaker="bet365", market_key="totals", outcomes=[Outcome(name="Over", price=2.10, point=2.5)]
+                    ),
+                    BookMarket(
+                        bookmaker="betfair_ex_au",
+                        market_key="totals_lay",
+                        outcomes=[Outcome(name="Over", price=2.00, point=2.5)],
+                    ),
+                ],
+            )
+        ]
+
+    def close(self) -> None:  # pragma: no cover
+        pass
+
+
+def test_poll_secondary_records_and_detects(tmp_path) -> None:
+    settings = Settings(
+        duckdb_path=str(tmp_path / "app4.duckdb"), telegram_bot_token="", odds_api_io_key="x", _env_file=None
+    )
+    config = AppConfig(
+        sports=["aussierules_afl"],
+        markets=["totals"],
+        odds_api_io_sport_map={"aussierules_afl": "aussie-rules"},
+        odds_api_io_bookmakers=["Bet365", "Betfair Exchange"],
+    )
+    app = MiddlerApp(settings, config)
+    app.secondary = FakeSecondaryBackLay()  # type: ignore[assignment]
+
+    alerted = app.poll_secondary(NOW)
+
+    assert app.history.quote_count() > 0  # odds-api.io observations recorded
+    assert app.history.opportunity_count() >= 1 and alerted >= 1  # back-lay detected
+    app.history.close()
+
+
 def test_run_once_refreshes_report(tmp_path) -> None:
     settings = Settings(duckdb_path=str(tmp_path / "app3.duckdb"), telegram_bot_token="", _env_file=None)
     config = AppConfig(sports=["aussierules_afl"], markets=["totals"])

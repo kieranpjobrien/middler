@@ -73,6 +73,9 @@ class SchedulerConfig(BaseModel):
     poll_min_sec: int = 60
     poll_max_sec: int = 3600
     stop_before_commence_sec: int = 0
+    # The secondary feed (odds-api.io) polls on its own fast cadence, independent
+    # of the credit-limited primary — its limit is per-hour, not per-month.
+    secondary_interval_sec: int = 600
 
 
 class StakingConfig(BaseModel):
