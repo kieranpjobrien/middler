@@ -110,12 +110,13 @@ scheduler:
 # spreads). 5 calls/day × 3 = ~450/month, leaving a reserve. The live balance is
 # also read from the API's response header and polling stops below the reserve.
 budget:
-  # Mixed now: golf outright = 1 credit/call, team sports = 3 credits/call. 5
-  # calls/day worst-case 15 credits = ~450/month, within 500, reserve backstops.
-  the_odds_api_per_day: 5
+  # The Odds API is spent adaptively: each day targets (remaining - reserve) /
+  # days-left-in-month credits, so it uses the full 500/month smoothly (golf calls
+  # cost 1 credit, team-sport calls 3) and stops above the reserve.
+  the_odds_api_monthly_credits: 500
   the_odds_api_min_reserve: 50
-  odds_api_io_per_hour: 90      # free tier allows 100/hour
-  oddspapi_per_day: 8           # free tier allows ~250/month (client not yet wired)
+  odds_api_io_per_hour: 90      # free tier allows 100/hour (polled independently)
+  oddspapi_per_day: 8           # free tier ~250/month (client not yet wired)
 
 # ── Stake calculator defaults (for the Telegram alert) ───────────────────────
 staking:

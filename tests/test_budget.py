@@ -54,6 +54,19 @@ def test_persistence_across_instances(tmp_path) -> None:
 
 def test_caps_from_config_defaults() -> None:
     caps = caps_from_config(BudgetConfig())
-    assert caps["the_odds_api"]["per_day"] == 5
+    assert caps["the_odds_api"]["per_day"] is None  # governed by the adaptive credit budget
     assert caps["odds_api_io"]["per_hour"] == 90
     assert caps["oddspapi"]["per_day"] == 8
+
+
+def test_daily_credit_budget(tmp_path) -> None:
+    g = BudgetGuard(tmp_path / "b.json", {"f": {"per_hour": None, "per_day": None}})
+    # 10-credit daily budget; 3-credit calls allowed until the budget is spent.
+    assert g.allow("f", now=T, daily_credit_budget=10, next_cost=3)
+    g.record("f", now=T, cost=3)
+    g.record("f", now=T, cost=3)
+    g.record("f", now=T, cost=3)
+    assert g.credits_spent("f", now=T) == 9
+    assert not g.allow("f", now=T, daily_credit_budget=10, next_cost=3)  # 9 + 3 > 10
+    assert g.allow("f", now=T, daily_credit_budget=10, next_cost=1)  # 9 + 1 <= 10
+    assert g.allow("f", now=T + 25 * 3600, daily_credit_budget=10, next_cost=3)  # window cleared

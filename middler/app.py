@@ -12,6 +12,7 @@ separate, money-touching module that stays dormant unless explicitly enabled.
 
 from __future__ import annotations
 
+import calendar
 import signal
 import time
 from datetime import UTC, datetime, timedelta
@@ -39,6 +40,11 @@ log = get_logger(__name__)
 
 ALERT_COOLDOWN_SEC = 1800  # don't re-alert the same structural opportunity within 30 min
 SECONDARY_MAX_EVENTS = 10  # per secondary poll: the soonest fixtures (bounds the /odds/multi call)
+
+
+def _days_left_in_month(now: datetime) -> int:
+    """Days remaining in the current calendar month, including today (≥ 1)."""
+    return max(1, calendar.monthrange(now.year, now.month)[1] - now.day + 1)
 
 
 class MiddlerApp:
@@ -103,25 +109,28 @@ class MiddlerApp:
         for sport, ids in by_sport.items():
             if not sport:
                 continue
-            if not self.budget.allow("the_odds_api", min_reserve=self.config.budget.the_odds_api_min_reserve):
-                log.info(
-                    "the_odds_api budget reached (remaining=%s) — skipping %s this cycle",
-                    self.budget.remaining("the_odds_api"),
-                    sport,
-                )
+            markets = self.config.markets_for(sport)
+            cost = len(markets)
+            reserve = self.config.budget.the_odds_api_min_reserve
+            remaining = self.budget.remaining("the_odds_api")
+            if remaining is None:
+                remaining = self.config.budget.the_odds_api_monthly_credits
+            daily_budget = max(float(cost), (remaining - reserve) / _days_left_in_month(now))
+            if not self.budget.allow(
+                "the_odds_api", min_reserve=reserve, daily_credit_budget=daily_budget, next_cost=cost
+            ):
+                log.info("the_odds_api day's credit budget spent (remaining=%s) — skipping %s", remaining, sport)
                 for event_id in ids:
                     self.scheduler.reschedule(event_id, now)
                 continue
             try:
-                raw = self.client.get_odds(
-                    sport, self.config.markets_for(sport), commence_from=now, commence_to=window_to, event_ids=ids
-                )
+                raw = self.client.get_odds(sport, markets, commence_from=now, commence_to=window_to, event_ids=ids)
             except httpx.HTTPError as exc:
                 log.warning("odds poll failed for %s: %s", sport, exc)
                 for event_id in ids:
                     self.scheduler.reschedule(event_id, now)
                 continue
-            self.budget.record("the_odds_api", remaining=self.client.remaining_credits)
+            self.budget.record("the_odds_api", remaining=self.client.remaining_credits, cost=cost)
             events, quotes = normalise_odds_response(raw, observed_at=now)
             # Record the primary feed's observations (the backcast stays single-feed
             # and consistent); the secondary feed only enriches live detection.

@@ -32,6 +32,7 @@ class BudgetGuard:
         self.state_path = Path(state_path)
         self.caps = caps
         self._calls: dict[str, list[float]] = {}
+        self._credits: dict[str, list[list[float]]] = {}  # feed -> [[ts, cost], ...]
         self._remaining: dict[str, int] = {}
         self._load()
 
@@ -39,18 +40,35 @@ class BudgetGuard:
         if self.state_path.exists():
             data = json.loads(self.state_path.read_text(encoding="utf-8"))
             self._calls = {k: list(v) for k, v in data.get("calls", {}).items()}
+            self._credits = {k: [list(p) for p in v] for k, v in data.get("credits", {}).items()}
             self._remaining = dict(data.get("remaining", {}))
 
     def _save(self) -> None:
         self.state_path.parent.mkdir(parents=True, exist_ok=True)
-        self.state_path.write_text(json.dumps({"calls": self._calls, "remaining": self._remaining}), encoding="utf-8")
+        self.state_path.write_text(
+            json.dumps({"calls": self._calls, "credits": self._credits, "remaining": self._remaining}),
+            encoding="utf-8",
+        )
 
     def _prune(self, feed: str, now: float) -> list[float]:
         kept = [t for t in self._calls.get(feed, []) if now - t < 86400]
         self._calls[feed] = kept
+        self._credits[feed] = [p for p in self._credits.get(feed, []) if now - p[0] < 86400]
         return kept
 
-    def allow(self, feed: str, now: float | None = None, min_reserve: int | None = None) -> bool:
+    def credits_spent(self, feed: str, now: float | None = None) -> float:
+        """Total credits spent on ``feed`` in the last 24 hours."""
+        now = time.time() if now is None else now
+        return sum(cost for ts, cost in self._credits.get(feed, []) if now - ts < 86400)
+
+    def allow(
+        self,
+        feed: str,
+        now: float | None = None,
+        min_reserve: int | None = None,
+        daily_credit_budget: float | None = None,
+        next_cost: float = 0.0,
+    ) -> bool:
         """Return True if another call to ``feed`` is within budget right now.
 
         Args:
@@ -58,6 +76,9 @@ class BudgetGuard:
             now: Current epoch seconds (defaults to wall clock).
             min_reserve: For credit-metered feeds, refuse if the last-reported
                 remaining balance is below this.
+            daily_credit_budget: If set, refuse once the credits spent in the last
+                24h plus ``next_cost`` would exceed this (the adaptive day's spend).
+            next_cost: The credit cost of the call being considered.
 
         Returns:
             True if a call is permitted.
@@ -71,12 +92,18 @@ class BudgetGuard:
             return False
         if per_day is not None and len(ts) >= per_day:
             return False
-        return not (min_reserve is not None and feed in self._remaining and self._remaining[feed] < min_reserve)
+        if min_reserve is not None and feed in self._remaining and self._remaining[feed] < min_reserve:
+            return False
+        return not (daily_credit_budget is not None and self.credits_spent(feed, now) + next_cost > daily_credit_budget)
 
-    def record(self, feed: str, now: float | None = None, remaining: int | None = None, count: int = 1) -> None:
-        """Record ``count`` call(s) to ``feed`` and optionally its reported credit balance."""
+    def record(
+        self, feed: str, now: float | None = None, remaining: int | None = None, count: int = 1, cost: float = 0.0
+    ) -> None:
+        """Record ``count`` call(s) (and ``cost`` credits) and the reported balance."""
         now = time.time() if now is None else now
         self._calls.setdefault(feed, []).extend([now] * count)
+        if cost:
+            self._credits.setdefault(feed, []).append([now, cost])
         if remaining is not None:
             self._remaining[feed] = remaining
         self._prune(feed, now)
@@ -90,7 +117,7 @@ class BudgetGuard:
 def caps_from_config(budget: object) -> dict[str, dict[str, int | None]]:
     """Build the per-feed caps mapping from a :class:`~middler.config.BudgetConfig`."""
     return {
-        "the_odds_api": {"per_hour": None, "per_day": getattr(budget, "the_odds_api_per_day", 5)},
+        "the_odds_api": {"per_hour": None, "per_day": None},  # governed by the adaptive credit budget
         "odds_api_io": {"per_hour": getattr(budget, "odds_api_io_per_hour", 90), "per_day": None},
         "oddspapi": {"per_hour": None, "per_day": getattr(budget, "oddspapi_per_day", 8)},
     }

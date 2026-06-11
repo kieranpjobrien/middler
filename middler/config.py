@@ -85,11 +85,11 @@ class StakingConfig(BaseModel):
 
 
 class BudgetConfig(BaseModel):
-    # Free-tier guards. The Odds API: 500 credits/month, 3 credits per team-sport
-    # call → ~5 calls/day lasts a month with a reserve. odds-api.io: 100 req/hour.
-    # OddsPapi: 250 req/month (~8/day). The Odds API balance is also read live from
-    # its response header and polling stops below the reserve.
-    the_odds_api_per_day: int = 5
+    # Free-tier guards. The Odds API (500 credits/month) is spent *adaptively*: each
+    # day it targets (remaining − reserve) ÷ days-left-in-month credits, so it uses
+    # the full allowance smoothly and stops above the reserve. odds-api.io is
+    # rate-limited (100/hour, polled independently); OddsPapi is 250/month (~8/day).
+    the_odds_api_monthly_credits: int = 500
     the_odds_api_min_reserve: int = 50
     odds_api_io_per_hour: int = 90
     oddspapi_per_day: int = 8
