@@ -80,43 +80,53 @@ def detect_opportunities(
             opps.extend(
                 _detect_over_under(event, books, market_key, detection, staking, sharp_set, hit_rate_prior, observed_at)
             )
-    if any(bm.market_key in ("outrights", "outrights_lay") for bm in event.book_markets):
-        opps.extend(_detect_outright_back_lay(event, detection, staking, observed_at))
+    for back_market, lay_market in (
+        ("outrights", "outrights_lay"),
+        ("h2h", "h2h_lay"),
+        ("totals", "totals_lay"),
+        ("spreads", "spreads_lay"),
+    ):
+        if any(bm.market_key == lay_market for bm in event.book_markets):
+            opps.extend(_detect_back_lay(event, back_market, lay_market, detection, staking, observed_at))
     opps.sort(key=lambda o: (o.is_risk_free, o.ev or 0.0, o.roi or 0.0, o.margin or 0.0), reverse=True)
     return opps
 
 
-# ── outright back-lay (golf etc.: back at a bookie, lay on the exchange) ──────
-def _detect_outright_back_lay(
+# ── back-lay (back at a bookie, lay on the exchange) ─────────────────────────
+def _detect_back_lay(
     event: Event,
+    back_market: str,
+    lay_market: str,
     detection: DetectionConfig,
     staking: StakingConfig,
     observed_at: datetime,
 ) -> list[Opportunity]:
-    """Find back-at-bookie / lay-on-Betfair value on outright (winner) markets.
+    """Find back-at-bookie / lay-on-Betfair value for one market.
 
-    The feed supplies bookie back prices (``outrights``) and the Betfair lay
-    prices (``outrights_lay``) for each runner. For every runner present in both,
-    the back-lay position is evaluated; a non-negative locked-in ROI (above
-    ``min_back_lay_roi``) is flagged. The lay leg is on Betfair, so the position
-    is inherently exchange-verified.
+    Works for any market: ``outrights`` (golf winner), ``h2h``, ``totals``,
+    ``spreads`` — paired with the matching Betfair lay market (``*_lay``). Each
+    selection is matched on (outcome name, point), so we back the best bookie
+    price and lay the *same* selection on Betfair. A non-negative locked-in ROI
+    (above ``min_back_lay_roi``) is flagged; the lay leg is the exchange, so the
+    position is inherently sharp-verified.
     """
-    back: dict[str, _Leg] = {}
-    lay: dict[str, float] = {}
+    back: dict[tuple[str, float | None], _Leg] = {}
+    lay: dict[tuple[str, float | None], float] = {}
     for bm in event.book_markets:
         is_exchange = canonical_book(bm.bookmaker) == "betfair"
-        if bm.market_key == "outrights" and not is_exchange:
+        if bm.market_key == back_market and not is_exchange:
             for o in bm.outcomes:
-                if o.name not in back or o.price > back[o.name].price:
-                    back[o.name] = _Leg(bm.bookmaker, o.name, None, o.price, 0.0)
-        elif bm.market_key == "outrights_lay" and is_exchange:
+                key = (o.name, o.point)
+                if key not in back or o.price > back[key].price:
+                    back[key] = _Leg(bm.bookmaker, o.name, o.point, o.price, 0.0)
+        elif bm.market_key == lay_market and is_exchange:
             for o in bm.outcomes:
-                lay[o.name] = o.price
+                lay[(o.name, o.point)] = o.price
 
     opps: list[Opportunity] = []
     stake = staking.default_total_stake
-    for player, leg in back.items():
-        lay_odds = lay.get(player)
+    for key, leg in back.items():
+        lay_odds = lay.get(key)
         if lay_odds is None or lay_odds <= 1.0 or leg.price <= 1.0:
             continue
         bl = evaluate_back_lay(
@@ -127,19 +137,19 @@ def _detect_outright_back_lay(
         legs = [
             OpportunityLeg(
                 bookmaker=leg.bookmaker,
-                market_key="outrights",
-                outcome_name=player,
+                market_key=back_market,
+                outcome_name=leg.name,
                 side="back",
-                point=None,
+                point=leg.point,
                 price=leg.price,
                 stake=round(stake, 2),
             ),
             OpportunityLeg(
                 bookmaker="betfair_ex_au",
-                market_key="outrights_lay",
-                outcome_name=player,
+                market_key=lay_market,
+                outcome_name=leg.name,
                 side="lay",
-                point=None,
+                point=leg.point,
                 price=lay_odds,
                 stake=round(bl.lay_stake, 2),
             ),
@@ -150,7 +160,7 @@ def _detect_outright_back_lay(
                 event_id=event.id,
                 sport_key=event.sport_key,
                 commence_time=event.commence_time,
-                market_key="outrights",
+                market_key=back_market,
                 home_team=event.home_team,
                 away_team=event.away_team,
                 legs=legs,

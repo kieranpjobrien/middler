@@ -108,6 +108,43 @@ def test_normalise_skips_unknown_markets_and_bad_prices() -> None:
     assert len(h2h) == 1 and h2h[0].name == "B"
 
 
+def test_betfair_lay_prices_extracted() -> None:
+    raw = {
+        "id": 5,
+        "home": "A",
+        "away": "B",
+        "date": "2026-06-12T09:00:00Z",
+        "bookmakers": {
+            "Betfair Exchange": [
+                {
+                    "name": "ML",
+                    "odds": [
+                        {
+                            "home": "2.0",
+                            "draw": "3.5",
+                            "away": "4.0",
+                            "layHome": "2.1",
+                            "layAway": "4.2",
+                            "layDraw": "3.6",
+                        }
+                    ],
+                },
+                {
+                    "name": "Totals",
+                    "odds": [{"hdp": 2.5, "over": "1.9", "under": "1.9", "layOver": "1.95", "layUnder": "1.97"}],
+                },
+            ]
+        },
+    }
+    event = normalise_io_event(raw, sport_key="soccer")
+    markets = {bm.market_key for bm in event.book_markets}
+    assert {"h2h", "h2h_lay", "totals", "totals_lay"} <= markets
+    lay_h2h = next(bm for bm in event.book_markets if bm.market_key == "h2h_lay")
+    assert {o.name: o.price for o in lay_h2h.outcomes} == {"A": 2.1, "B": 4.2, "Draw": 3.6}
+    lay_tot = next(bm for bm in event.book_markets if bm.market_key == "totals_lay")
+    assert {o.name: (o.price, o.point) for o in lay_tot.outcomes} == {"Over": (1.95, 2.5), "Under": (1.97, 2.5)}
+
+
 def test_get_odds_requires_bookmakers_and_handles_empty_ids() -> None:
     client = OddsApiIoClient(api_key="x")  # no network on construction
     with pytest.raises(ValueError):

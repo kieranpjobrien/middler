@@ -223,6 +223,32 @@ def test_outright_back_lay_detects_golf_value() -> None:
     assert lay.bookmaker == "betfair_ex_au" and lay.price == 34.0
 
 
+def test_team_back_lay_from_betfair_lay() -> None:
+    # Bet365 backs Over 2.5 @ 2.10; Betfair lays the same line @ 2.00 → value back-lay.
+    event = _event(
+        [
+            BookMarket(
+                bookmaker="bet365",
+                market_key="totals",
+                outcomes=[Outcome(name="Over", price=2.10, point=2.5)],
+            ),
+            BookMarket(
+                bookmaker="betfair_ex_au",
+                market_key="totals_lay",
+                outcomes=[Outcome(name="Over", price=2.00, point=2.5)],
+            ),
+        ]
+    )
+    back_lays = [o for o in _detect(event) if o.kind == "back_lay"]
+    assert len(back_lays) == 1
+    o = back_lays[0]
+    assert o.market_key == "totals" and o.is_risk_free
+    back = next(leg for leg in o.legs if leg.side == "back")
+    lay = next(leg for leg in o.legs if leg.side == "lay")
+    assert back.bookmaker == "bet365" and back.point == pytest.approx(2.5)
+    assert lay.bookmaker == "betfair_ex_au" and lay.price == pytest.approx(2.00)
+
+
 def test_no_opportunity_on_vigged_market() -> None:
     # A single book with normal vig: no arb, and Over/Under at the same line is
     # not a middle.

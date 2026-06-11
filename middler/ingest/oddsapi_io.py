@@ -36,6 +36,7 @@ from typing import Any
 
 import httpx
 
+from middler.books import canonical_book
 from middler.ingest.normaliser import parse_commence
 from middler.logging_setup import get_logger
 from middler.models import BookMarket, Event, Outcome
@@ -110,6 +111,37 @@ def _outcomes_for(market_key: str, entry: dict[str, Any], home: str, away: str) 
     return outcomes
 
 
+def _lay_outcomes_for(market_key: str, entry: dict[str, Any], home: str, away: str) -> list[Outcome]:
+    """Build LAY outcomes from a Betfair entry's lay fields (layHome/layOver…).
+
+    Mirrors :func:`_outcomes_for` but reads the lay side, so the back-lay detector
+    can pair a bookie back price with the Betfair lay price for the same selection.
+    """
+    outcomes: list[Outcome] = []
+    if market_key == "h2h":
+        for key, name in (("layHome", home), ("layAway", away), ("layDraw", "Draw")):
+            price = _f(entry.get(key))
+            if price is not None:
+                outcomes.append(Outcome(name=name, price=price, point=None))
+    elif market_key == "spreads":
+        hdp = entry.get("hdp")
+        if hdp is not None:
+            home_price, away_price = _f(entry.get("layHome")), _f(entry.get("layAway"))
+            if home_price is not None:
+                outcomes.append(Outcome(name=home, price=home_price, point=float(hdp)))
+            if away_price is not None:
+                outcomes.append(Outcome(name=away, price=away_price, point=-float(hdp)))
+    elif market_key == "totals":
+        line = entry.get("hdp") if entry.get("hdp") is not None else entry.get("max")
+        if line is not None:
+            over_price, under_price = _f(entry.get("layOver")), _f(entry.get("layUnder"))
+            if over_price is not None:
+                outcomes.append(Outcome(name="Over", price=over_price, point=float(line)))
+            if under_price is not None:
+                outcomes.append(Outcome(name="Under", price=under_price, point=float(line)))
+    return outcomes
+
+
 def normalise_io_event(raw: dict[str, Any], sport_key: str) -> Event:
     """Convert one odds-api.io event object into an :class:`Event`.
 
@@ -126,22 +158,28 @@ def normalise_io_event(raw: dict[str, Any], sport_key: str) -> Event:
     book_markets: list[BookMarket] = []
     for book_name, markets in (raw.get("bookmakers") or {}).items():
         key = _book_key(str(book_name))
+        is_betfair = canonical_book(key) == "betfair"
         for market in markets:
             market_key = MARKET_ALIASES.get(str(market.get("name", "")).lower())
             if market_key is None:
                 continue
             last_update = market.get("updatedAt")
+            stamp = parse_commence(last_update) if last_update else None
             for entry in market.get("odds", []):
                 outcomes = _outcomes_for(market_key, entry, home, away)
                 if outcomes:
                     book_markets.append(
-                        BookMarket(
-                            bookmaker=key,
-                            market_key=market_key,
-                            outcomes=outcomes,
-                            last_update=parse_commence(last_update) if last_update else None,
-                        )
+                        BookMarket(bookmaker=key, market_key=market_key, outcomes=outcomes, last_update=stamp)
                     )
+                # Betfair entries carry lay prices → expose a {market}_lay market.
+                if is_betfair:
+                    lay_outcomes = _lay_outcomes_for(market_key, entry, home, away)
+                    if lay_outcomes:
+                        book_markets.append(
+                            BookMarket(
+                                bookmaker=key, market_key=f"{market_key}_lay", outcomes=lay_outcomes, last_update=stamp
+                            )
+                        )
     return Event(
         id=str(raw["id"]),
         sport_key=sport_key,
