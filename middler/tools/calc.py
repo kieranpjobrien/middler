@@ -62,7 +62,9 @@ def _arb(args: argparse.Namespace) -> None:
     print(f"ARB - odds {', '.join(f'{o:g}' for o in args.odds)} (stake {_money(args.stake)})")
     print(f"  Book sum {r.implied_sum:.4f}, margin {r.margin * 100:.2f}%")
     print(f"  Stakes: {', '.join(_money(s) for s in r.stakes)}")
-    verdict = f"profit {_money(r.profit)} ({r.roi * 100:.2f}%)" if r.is_arbitrage else "NOT an arbitrage (book sum >= 1)"
+    verdict = (
+        f"profit {_money(r.profit)} ({r.roi * 100:.2f}%)" if r.is_arbitrage else "NOT an arbitrage (book sum >= 1)"
+    )
     print(f"  Guaranteed return {_money(r.guaranteed_return)} -> {verdict}")
 
 
