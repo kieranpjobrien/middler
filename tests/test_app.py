@@ -210,6 +210,71 @@ def test_poll_secondary_records_and_detects(tmp_path) -> None:
     app.history.close()
 
 
+class FakeTertiary:
+    """OddsPapi stand-in: a tournament → fixture → deep h2h arb across two books."""
+
+    def get_tournaments(self, sport_id: int) -> list[dict[str, Any]]:
+        return [{"tournamentId": 100}]
+
+    def get_fixtures(self, tournament_id: int) -> list[dict[str, Any]]:
+        return [{"fixtureId": "fx1", "startTime": COMMENCE.strftime("%Y-%m-%dT%H:%M:%SZ")}]
+
+    def get_fixture_odds(self, fixture_id: str, sport_key: str) -> Event:
+        return Event(
+            id=fixture_id,
+            sport_key=sport_key,
+            commence_time=COMMENCE,
+            home_team="Carlton",
+            away_team="Collingwood",
+            book_markets=[
+                BookMarket(
+                    bookmaker="sportsbet",
+                    market_key="h2h",
+                    outcomes=[Outcome(name="Carlton", price=2.10), Outcome(name="Collingwood", price=1.80)],
+                ),
+                BookMarket(
+                    bookmaker="tab",
+                    market_key="h2h",
+                    outcomes=[Outcome(name="Carlton", price=1.80), Outcome(name="Collingwood", price=2.10)],
+                ),
+            ],
+        )
+
+    def close(self) -> None:  # pragma: no cover
+        pass
+
+
+def test_poll_oddspapi_walks_records_and_detects(tmp_path) -> None:
+    settings = Settings(
+        duckdb_path=str(tmp_path / "app5.duckdb"), telegram_bot_token="", oddspapi_key="x", _env_file=None
+    )
+    config = AppConfig(sports=["aussierules_afl"], oddspapi_sport_map={"aussierules_afl": 31})
+    app = MiddlerApp(settings, config)
+    app.tertiary = FakeTertiary()  # type: ignore[assignment]
+
+    alerted = app.poll_oddspapi(NOW)
+
+    assert app.history.quote_count() == 4  # 2 books × 2 outcomes recorded
+    assert app.history.opportunity_count() >= 1 and alerted >= 1  # the h2h arb detected
+    app.history.close()
+
+
+def test_poll_oddspapi_respects_budget(tmp_path) -> None:
+    settings = Settings(
+        duckdb_path=str(tmp_path / "app6.duckdb"), telegram_bot_token="", oddspapi_key="x", _env_file=None
+    )
+    config = AppConfig(sports=["aussierules_afl"], oddspapi_sport_map={"aussierules_afl": 31})
+    config.budget.oddspapi_per_day = 0  # no allowance → nothing should be fetched
+    app = MiddlerApp(settings, config)
+    app.tertiary = FakeTertiary()  # type: ignore[assignment]
+
+    alerted = app.poll_oddspapi(NOW)
+
+    assert alerted == 0
+    assert app.history.quote_count() == 0  # the budget guard blocked every call
+    app.history.close()
+
+
 def test_run_once_refreshes_report(tmp_path) -> None:
     settings = Settings(duckdb_path=str(tmp_path / "app3.duckdb"), telegram_bot_token="", _env_file=None)
     config = AppConfig(sports=["aussierules_afl"], markets=["totals"])

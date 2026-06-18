@@ -76,6 +76,9 @@ class SchedulerConfig(BaseModel):
     # The secondary feed (odds-api.io) polls on its own fast cadence, independent
     # of the credit-limited primary — its limit is per-hour, not per-month.
     secondary_interval_sec: int = 600
+    # The tertiary feed (OddsPapi) is the deep cross-book layer but the stingiest
+    # quota (~250/month), so it polls rarely — a few deep snapshots a day.
+    oddspapi_interval_sec: int = 10800  # 3 hours
 
 
 class StakingConfig(BaseModel):
@@ -116,6 +119,10 @@ class AppConfig(BaseModel):
     # Exact odds-api.io bookmaker names to request (from GET /v3/bookmakers). The
     # free tier allows two selected books; paid plans unlock the AU books.
     odds_api_io_bookmakers: list[str] = Field(default_factory=lambda: ["Bet365", "Betfair Exchange"])
+    # Maps a The-Odds-API sport key → the OddsPapi numeric sportId for the same
+    # sport. The tertiary feed (deep h2h cross-book) runs only for sports listed
+    # here (sportIds confirmed against OddsPapi: aussie-rules=31, rugby=26, golf=67).
+    oddspapi_sport_map: dict[str, int] = Field(default_factory=dict)
     # Per-sport market override (some sports reject the default markets — golf only
     # supports "outrights"). Falls back to ``markets`` for unlisted sports.
     markets_by_sport: dict[str, list[str]] = Field(default_factory=dict)

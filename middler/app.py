@@ -28,6 +28,7 @@ from middler.ingest.merge import align_and_merge
 from middler.ingest.normaliser import normalise_event, normalise_odds_response, quotes_from_event
 from middler.ingest.odds_api import OddsApiClient
 from middler.ingest.oddsapi_io import OddsApiIoClient
+from middler.ingest.oddspapi import OddsPapiClient
 from middler.logging_setup import get_logger, setup_logging
 from middler.match.entity import EntityMatcher
 from middler.models import Event, EventStatus
@@ -40,6 +41,11 @@ log = get_logger(__name__)
 
 ALERT_COOLDOWN_SEC = 1800  # don't re-alert the same structural opportunity within 30 min
 SECONDARY_MAX_EVENTS = 10  # per secondary poll: the soonest fixtures (bounds the /odds/multi call)
+# OddsPapi quota is tiny (~250/month → 8/day), so each mapped sport gets a shallow
+# walk: the soonest tournaments, then the soonest fixtures within them. With the
+# per-call budget guard, this keeps the whole feed comfortably inside the free tier.
+ODDSPAPI_MAX_TOURNAMENTS = 1
+ODDSPAPI_MAX_FIXTURES = 2
 
 
 def _days_left_in_month(now: datetime) -> int:
@@ -57,6 +63,7 @@ class MiddlerApp:
         self.secondary = (
             OddsApiIoClient(settings.odds_api_io_key, region=config.region) if settings.odds_api_io_key else None
         )
+        self.tertiary = OddsPapiClient(settings.oddspapi_key) if settings.oddspapi_key else None
         self.history = HistoryStore(settings.duckdb_path)
         self.hot = HotStore(settings.redis_url)
         self.scheduler = PollScheduler(config.scheduler)
@@ -66,6 +73,7 @@ class MiddlerApp:
         self._sport_of: dict[str, str] = {}
         self._last_discovery: datetime | None = None
         self._last_secondary: datetime | None = None
+        self._last_tertiary: datetime | None = None
         self._last_report: datetime | None = None
         self._stop = False
 
@@ -249,6 +257,80 @@ class MiddlerApp:
             return True
         return now <= dt <= window_to
 
+    # ── tertiary feed: deep cross-book OddsPapi h2h snapshots ────────────────
+    def _maybe_tertiary(self, now: datetime) -> None:
+        """Poll the tertiary feed (OddsPapi) on its own slow cadence (quota-stingy)."""
+        interval = self.config.scheduler.oddspapi_interval_sec
+        if interval <= 0 or self.tertiary is None:
+            return
+        if self._last_tertiary is not None and (now - self._last_tertiary).total_seconds() < interval:
+            return
+        try:
+            self.poll_oddspapi(now)
+        except Exception as exc:  # noqa: BLE001 - the tertiary feed must never stop the loop
+            log.warning("tertiary poll error: %s", exc)
+        self._last_tertiary = now
+
+    def poll_oddspapi(self, now: datetime) -> int:
+        """Take deep cross-book h2h snapshots from OddsPapi, record and detect.
+
+        OddsPapi carries far more books per fixture than the other feeds, so even a
+        couple of snapshots a day surface head-to-head arbitrage two-book feeds miss.
+        The quota is tiny, so every call (tournament discovery and odds alike) is
+        budget-guarded and the walk stops the moment the day's allowance is spent.
+
+        Returns:
+            The number of opportunities alerted on this pass.
+        """
+        client = self.tertiary
+        if client is None:
+            return 0
+        window_to = now + timedelta(hours=self.config.scheduler.active_window_hours)
+        alerted = 0
+        for sport in self.config.sports:
+            sport_id = self.config.oddspapi_sport_map.get(sport)
+            if sport_id is None or not self.budget.allow("oddspapi"):
+                continue
+            try:
+                fixtures = self._oddspapi_fixtures_due(client, sport_id, now, window_to)
+            except (httpx.HTTPError, KeyError, ValueError) as exc:
+                log.warning("tertiary discovery (oddspapi) failed for %s: %s", sport, exc)
+                continue
+            for fixture in fixtures[:ODDSPAPI_MAX_FIXTURES]:
+                if not self.budget.allow("oddspapi"):
+                    break
+                try:
+                    event = client.get_fixture_odds(str(fixture["fixtureId"]), sport)
+                    self.budget.record("oddspapi")
+                except (httpx.HTTPError, KeyError, ValueError) as exc:
+                    log.warning("tertiary odds (oddspapi) failed for %s: %s", sport, exc)
+                    continue
+                if not event.book_markets:
+                    continue
+                self.history.write_quotes(quotes_from_event(event, now))
+                self.history.upsert_events([event])
+                alerted += self._detect_and_alert(event, now)
+        return alerted
+
+    def _oddspapi_fixtures_due(
+        self, client: OddsPapiClient, sport_id: int, now: datetime, window_to: datetime
+    ) -> list[dict[str, object]]:
+        """Discover the soonest in-window OddsPapi fixtures for a sport (budget-guarded)."""
+        if not self.budget.allow("oddspapi"):
+            return []
+        tournaments = client.get_tournaments(sport_id)
+        self.budget.record("oddspapi")
+        fixtures: list[dict[str, object]] = []
+        for tour in tournaments[:ODDSPAPI_MAX_TOURNAMENTS]:
+            tour_id = tour.get("tournamentId")
+            if tour_id is None or not self.budget.allow("oddspapi"):
+                break
+            fx = client.get_fixtures(int(tour_id))
+            self.budget.record("oddspapi")
+            fixtures.extend(f for f in fx if f.get("fixtureId") and self._io_event_soon(f, now, window_to))
+        fixtures.sort(key=lambda f: str(f.get("startTime") or f.get("date") or ""))
+        return fixtures
+
     # ── loop ─────────────────────────────────────────────────────────────────
     def run_once(self, now: datetime | None = None) -> None:
         """Run a single cycle: discover if due, poll due events, refresh the report."""
@@ -258,6 +340,7 @@ class MiddlerApp:
             self.discover(now)
         self.poll_due(now)
         self._maybe_secondary(now)
+        self._maybe_tertiary(now)
         self._maybe_report(now)
 
     def _maybe_report(self, now: datetime) -> None:
@@ -324,6 +407,8 @@ class MiddlerApp:
         self.client.close()
         if self.secondary is not None:
             self.secondary.close()
+        if self.tertiary is not None:
+            self.tertiary.close()
         self.history.close()
 
 

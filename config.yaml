@@ -59,6 +59,16 @@ odds_api_io_bookmakers:
   - Bet365
   - Betfair Exchange
 
+# Tertiary feed (OddsPapi) — deep cross-book h2h. Maps each The-Odds-API sport key
+# to OddsPapi's numeric sportId (confirmed: aussie-rules=31, rugby=26, golf=67).
+# Its strength is breadth (300+ books → head-to-head arbs the two-book feeds miss),
+# but the quota is tiny (~250/month), so only the in-season team sports are mapped
+# here. Golf is omitted: its OddsPapi market is matchups, not the score-totals play,
+# and its outright back-lay already runs off The Odds API.
+oddspapi_sport_map:
+  aussierules_afl: 31
+  rugbyleague_nrl: 26
+
 # Per-sport market override. Golf only supports outright (winner) markets — the
 # feed returns bookie back prices plus Betfair lay prices, enabling back-lay.
 # Unlisted sports use the default `markets` above.
